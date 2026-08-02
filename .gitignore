@@ -3,3 +3,4 @@
 .hermes/
 *.log
 .env
+config/generators.json
