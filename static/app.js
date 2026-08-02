@@ -108,8 +108,24 @@ async function upBroker(){
 
 /* ========== панели ========== */
 const WI={Sine:'∿',Sawtooth:'↗',Square:'⊓',Noise:'≈',Random:'?',Constant:'—'};
-let searchQuery='';
-function filteredGens(){const q=searchQuery.trim().toLowerCase();if(!q)return gens;return gens.filter(g=>(g.name+' '+g.id+' '+g.topic+' '+g.waveType).toLowerCase().includes(q))}
+let searchQuery='',waveFilter='';
+function filteredGens(){
+  const q=searchQuery.trim().toLowerCase();
+  let list=gens;
+  if(waveFilter)list=list.filter(g=>g.waveType===waveFilter);
+  if(q)list=list.filter(g=>(g.name+' '+g.id+' '+g.topic+' '+g.waveType).toLowerCase().includes(q));
+  return list;
+}
+function upAlarms(){
+  const el=document.getElementById('alarmCnt');
+  if(!el)return;
+  const alarms=gens.filter(g=>panelCls(g)==='alarm').length;
+  const warns=gens.filter(g=>panelCls(g)==='warning').length;
+  const total=alarms+warns;
+  el.textContent='⚠ '+total+(warns?' ('+warns+' warn)':'');
+  el.style.color=alarms>0?'rgba(255,80,80,0.9)':warns>0?'rgba(255,200,50,0.8)':'rgba(255,255,255,0.3)';
+  el.style.fontWeight=total>0?'600':'400';
+}
 function render(){
   const g=document.getElementById('panelsGrid');
   const list=filteredGens();
@@ -434,6 +450,10 @@ document.addEventListener('input',e=>{
   const s=e.target.closest('[data-search]');
   if(s){searchQuery=s.value;render()}
 });
+document.addEventListener('change',e=>{
+  const wf=e.target.closest('[data-wavefilter]');
+  if(wf){waveFilter=wf.value;render()}
+});
 document.getElementById('generatorForm').addEventListener('submit',saveGenerator);
 document.getElementById('mqttForm').addEventListener('submit',saveMqttSettings);
 document.getElementById('importFile').addEventListener('change',e=>{
@@ -461,15 +481,15 @@ function ensureToken(){
 function applySnapshot(d){
   if(!d)return;
   if(Array.isArray(d.generators)){
-    if(JSON.stringify(gens)!==JSON.stringify(d.generators)){gens=d.generators;upCore();upChartUI();render()}
+    if(JSON.stringify(gens)!==JSON.stringify(d.generators)){gens=d.generators;upCore();upChartUI();render();upAlarms()}
   }
   if(d.type==='update'&&d.signals&&typeof d.signals==='object'){
     // дифф: смержить в существующий signals (только изменившиеся)
     for(const k in d.signals){signals[k]=d.signals[k]}
-    upPanels();upChart();upEv();
+    upPanels();upChart();upEv();upAlarms();
   } else if(d.signals&&typeof d.signals==='object'){
     // полный снапшот
-    signals=d.signals;upPanels();upChart();upEv()
+    signals=d.signals;upPanels();upChart();upEv();upAlarms();
   }
   if(d.broker){const b=d.broker;const $=id=>document.getElementById(id);
     $('brokerVer').textContent=b.version||'—';

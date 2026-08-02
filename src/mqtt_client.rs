@@ -236,6 +236,15 @@ impl MqttHandle {
             mqttopts.set_transport(tls_transport());
             info!("MQTT TLS enabled for {}:{}", cfg.host, cfg.port);
         }
+        // Last Will: если процесс умрёт, брокер опубликует offline-сообщение
+        mqttopts.set_last_will(
+            rumqttc::LastWill::new(
+                &cfg.diagnostics_topic,
+                "{\"@id\":\"signal-generator\",\"@type\":\"status\",\"name\":\"Signal Generator\",\"value\":\"offline\"}",
+                QoS::AtMostOnce,
+                false,
+            ),
+        );
 
         let (client, mut eventloop) = AsyncClient::new(mqttopts, 100);
         let client = Arc::new(Mutex::new(client));

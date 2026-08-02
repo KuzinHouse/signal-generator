@@ -133,7 +133,7 @@ body{background:radial-gradient(circle at 50%30%,#1a1a1a 0%,#000 70%);color:var(
 
 <div class="status-bar">
 <span><span class="mqtt-dot" id="mqttDot"></span>СИСТЕМА: <span id="sysStat">ОНЛАЙН</span></span>
-<span>v<span id="appVer">—</span> · ГЕНЕРАТОРОВ: <span id="genCnt">0</span> · <span id="actCnt">0</span> АКТИВНО</span>
+<span>v<span id="appVer">—</span> · ГЕНЕРАТОРОВ: <span id="genCnt">0</span> · <span id="actCnt">0</span> АКТИВНО · <span id="alarmCnt" style="color:rgba(255,80,80,0.7)">⚠ 0</span></span>
 </div>
 
 <!-- Broker Status -->
@@ -172,6 +172,15 @@ body{background:radial-gradient(circle at 50%30%,#1a1a1a 0%,#000 70%);color:var(
 <!-- Panels -->
 <div class="panels-toolbar">
 <input class="panels-search" id="panelsSearch" type="text" placeholder="Поиск: имя, id, топик..." data-search="1">
+<select class="panels-search" id="waveFilter" data-wavefilter="1" style="flex:0 0 auto;width:auto;cursor:pointer">
+<option value="">ВСЕ ВОЛНЫ</option>
+<option value="Sine">Sine</option>
+<option value="Sawtooth">Sawtooth</option>
+<option value="Square">Square</option>
+<option value="Noise">Noise</option>
+<option value="Random">Random</option>
+<option value="Constant">Constant</option>
+</select>
 <span class="panels-count" id="panelsCount">0 / 0</span>
 <span style="flex:1"></span>
 <button class="btn-fut" data-action="export-config" title="Скачать бэкап (JSON)">⇩ БЭКАП</button>
