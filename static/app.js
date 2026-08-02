@@ -7,6 +7,40 @@ function gv(s,id){if(!s||!Array.isArray(s))return null;const e=s.find(x=>x['@id'
 function gvNum(s,id){const v=gv(s,id);return typeof v==='number'?v:parseFloat(v)}
 function gvStr(s,id){const v=gv(s,id);return v!==null&&v!==undefined?String(v):'—'}
 function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+
+/* ========== экспорт/импорт конфигурации ========== */
+async function exportConfig(){
+  const d=await api('/config/export',{},8000);
+  if(!d)return;
+  const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='signal-generator-backup-'+new Date().toISOString().slice(0,10)+'.json';
+  document.body.appendChild(a);a.click();a.remove();
+  URL.revokeObjectURL(a.href);
+}
+function importConfig(){
+  document.getElementById('importFile').click();
+}
+async function handleImportFile(file){
+  if(!file)return;
+  try{
+    const text=await file.text();
+    const data=JSON.parse(text);
+    if(!data.generators||!Array.isArray(data.generators)){
+      alert('Ошибка: в файле нет поля generators');
+      return;
+    }
+    const r=await api('/config/import',{method:'POST',body:text},8000);
+    if(r&&r.status==='imported'){
+      loadAll();
+    }else{
+      alert('Ошибка импорта: '+(r&&r.error?r.error:'нет ответа'));
+    }
+  }catch(e){
+    alert('Ошибка чтения файла: '+e.message);
+  }
+}
 function rnd(v,d){return typeof v==='number'?parseFloat(v.toFixed(d||4)):v}
 function fmtBytes(b){if(!b||b<1)return'0';if(b<1024)return b+'B';if(b<1048576)return(b/1024).toFixed(0)+'KB';return(b/1048576).toFixed(0)+'MB'}
 
@@ -358,7 +392,7 @@ document.addEventListener('click',e=>{
   while(el&&el!==document.body&&el!==document.documentElement){
     if(el.hasAttribute&&el.hasAttribute('data-stop'))return; // внутри модалки/действий — не всплываем
     const a=el.dataset&&el.dataset.action;
-    if(a){a==='open-modal'?openModal():a==='close-modal'?closeModal():a==='confirm-yes'?confirmYes():a==='confirm-no'?confirmNo():a==='open-mqtt'?openMqttSettings():a==='close-mqtt'?closeMqtt():a==='test-mqtt'?testMqtt():0;return}
+    if(a){a==='open-modal'?openModal():a==='close-modal'?closeModal():a==='confirm-yes'?confirmYes():a==='confirm-no'?confirmNo():a==='open-mqtt'?openMqttSettings():a==='close-mqtt'?closeMqtt():a==='test-mqtt'?testMqtt():a==='export-config'?exportConfig():a==='import-config'?importConfig():0;return}
     if(el.hasAttribute&&el.hasAttribute('data-chart')){toggleChart(el.dataset.chart);return}
     if(el.hasAttribute&&el.hasAttribute('data-del')){delGen(el.dataset.del);return}
     if(el.hasAttribute&&el.hasAttribute('data-edit')){editGen(el.dataset.edit);return}
@@ -375,6 +409,10 @@ document.addEventListener('input',e=>{
 });
 document.getElementById('generatorForm').addEventListener('submit',saveGenerator);
 document.getElementById('mqttForm').addEventListener('submit',saveMqttSettings);
+document.getElementById('importFile').addEventListener('change',e=>{
+  handleImportFile(e.target.files[0]);
+  e.target.value='';
+});
 
 /* ========== init ========== */
 initLiveChart();initBrokerChart();

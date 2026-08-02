@@ -277,6 +277,91 @@ pub async fn get_generator_history(
     HttpResponse::Ok().json(serde_json::json!({"id": id, "points": points}))
 }
 
+/// GET /api/config/export — полный бэкап (генераторы + настройки MQTT)
+pub async fn export_config(state: web::Data<AppState>) -> impl Responder {
+    let gens = state.generators.lock().await;
+    let mqtt = state.mqtt_config.lock().await;
+    let mut mqtt_out = mqtt.clone();
+    if !mqtt_out.password.is_empty() {
+        mqtt_out.password = "••••••".to_string();
+    }
+    HttpResponse::Ok().json(serde_json::json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "exported_at": chrono::Utc::now().to_rfc3339(),
+        "generators": gens.clone(),
+        "mqtt": mqtt_out,
+    }))
+}
+
+/// POST /api/config/import — восстановить из бэкапа (заменяет генераторы и MQTT-настройки)
+pub async fn import_config(
+    state: web::Data<AppState>,
+    req: actix_web::HttpRequest,
+    body: web::Json<serde_json::Value>,
+) -> impl Responder {
+    if !auth_ok(&state, &req) {
+        return HttpResponse::Unauthorized().json(serde_json::json!({"error": "unauthorized"}));
+    }
+    let gens: Vec<GeneratorConfig> = match body.get("generators").cloned() {
+        Some(v) => match serde_json::from_value(v) {
+            Ok(g) => g,
+            Err(e) => {
+                return HttpResponse::BadRequest()
+                    .json(serde_json::json!({"error": format!("bad generators: {}", e)}))
+            }
+        },
+        None => {
+            return HttpResponse::BadRequest()
+                .json(serde_json::json!({"error": "missing generators"}))
+        }
+    };
+    if gens.is_empty() {
+        return HttpResponse::BadRequest().json(serde_json::json!({"error": "empty generators"}));
+    }
+
+    // MQTT-настройки (если есть)
+    if let Some(mqtt_val) = body.get("mqtt").cloned() {
+        if let Ok(mut mqtt) = serde_json::from_value::<MqttConfig>(mqtt_val) {
+            {
+                let mut cur = state.mqtt_config.lock().await;
+                if mqtt.password == "••••••" {
+                    mqtt.password = cur.password.clone();
+                }
+                *cur = mqtt.clone();
+            }
+            crate::persistence::save_mqtt(&mqtt).await;
+            let mqtt_handle = state.mqtt_handle.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+                mqtt_handle.reconnect(&mqtt).await;
+            });
+        }
+    }
+
+    // Заменяем генераторы и перезапускаем их
+    let mut imported = gens;
+    for g in imported.iter_mut() {
+        let topic = state.mqtt_config.lock().await.topic_for(&g.id);
+        if g.topic.is_empty() || g.topic != topic {
+            g.topic = topic;
+        }
+    }
+    {
+        let mut cur = state.generators.lock().await;
+        *cur = imported.clone();
+        for g in imported.iter() {
+            let _ = state.tx_shutdown.send(format!("update:{}", g.id));
+        }
+    }
+    crate::persistence::save(&imported).await;
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "status": "imported",
+        "generators": imported.len(),
+        "mqtt": true,
+    }))
+}
+
 /// GET /api/mqtt/config — текущие настройки брокера (пароль маскируем)
 pub async fn get_mqtt_config(state: web::Data<AppState>) -> impl Responder {
     let cfg = state.mqtt_config.lock().await;
@@ -371,6 +456,8 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             .route("/mqtt/config", web::get().to(get_mqtt_config))
             .route("/mqtt/config", web::put().to(update_mqtt_config))
             .route("/mqtt/test", web::post().to(test_mqtt_connection))
+            .route("/config/export", web::get().to(export_config))
+            .route("/config/import", web::post().to(import_config))
             .route("/health", web::get().to(health)),
     );
 }

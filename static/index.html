@@ -172,6 +172,10 @@ body{background:radial-gradient(circle at 50%30%,#1a1a1a 0%,#000 70%);color:var(
 <div class="panels-toolbar">
 <input class="panels-search" id="panelsSearch" type="text" placeholder="Поиск: имя, id, топик..." data-search="1">
 <span class="panels-count" id="panelsCount">0 / 0</span>
+<span style="flex:1"></span>
+<button class="btn-fut" data-action="export-config" title="Скачать бэкап (JSON)">⇩ БЭКАП</button>
+<button class="btn-fut" data-action="import-config" title="Восстановить из JSON">⇧ ВОССТАНОВИТЬ</button>
+<input type="file" id="importFile" accept="application/json,.json" style="display:none">
 </div>
 <!-- PANELS_PLACEHOLDER -->
 
