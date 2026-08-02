@@ -234,6 +234,8 @@ mod tests {
         let mut cfg = base_cfg();
         cfg.drift = 0.0;
         cfg.noise_amp = 0.0;
+        cfg.spike_prob = 0.0; // отключаем спайки/дроп для детерминизма
+        cfg.drop_prob = 0.0;
         let mut state = GeneratorState::new(cfg);
         for _ in 0..100 {
             let v = state.next_value(Some(0.01)).unwrap();
