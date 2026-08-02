@@ -259,6 +259,9 @@ mod tests {
         let mut cfg = base_cfg();
         cfg.drift = 1.0;
         cfg.wave_type = WaveType::Constant;
+        cfg.noise_amp = 0.0; // отключаем шум и спайки для детерминизма
+        cfg.spike_prob = 0.0;
+        cfg.drop_prob = 0.0;
         let mut state = GeneratorState::new(cfg);
         let v1 = state.next_value(Some(1.0)).unwrap();
         let v2 = state.next_value(Some(1.0)).unwrap();
