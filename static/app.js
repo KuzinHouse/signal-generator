@@ -47,10 +47,15 @@ async function upBroker(){
 
 /* ========== панели ========== */
 const WI={Sine:'∿',Sawtooth:'↗',Square:'⊓',Noise:'≈',Random:'?',Constant:'—'};
+let searchQuery='';
+function filteredGens(){const q=searchQuery.trim().toLowerCase();if(!q)return gens;return gens.filter(g=>(g.name+' '+g.id+' '+g.topic+' '+g.waveType).toLowerCase().includes(q))}
 function render(){
   const g=document.getElementById('panelsGrid');
-  if(!gens.length){g.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:30px;color:var(--t3);font-family:JetBrains Mono,monospace;font-size:10px;text-transform:uppercase">Нет генераторов</div>';return}
-  g.innerHTML=gens.map(x=>'<div class="panel '+(x.enabled?'':'disabled')+' '+panelCls(x)+'" id="pn-'+esc(x.id)+'" data-edit="'+esc(x.id)+'">'
+  const list=filteredGens();
+  const cnt=document.getElementById('panelsCount');
+  if(cnt)cnt.textContent=list.length+' / '+gens.length;
+  if(!list.length){g.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:30px;color:var(--t3);font-family:JetBrains Mono,monospace;font-size:10px;text-transform:uppercase">'+(gens.length?'Ничего не найдено':'Нет генераторов')+'</div>';return}
+  g.innerHTML=list.map(x=>'<div class="panel '+(x.enabled?'':'disabled')+' '+panelCls(x)+'" id="pn-'+esc(x.id)+'" data-edit="'+esc(x.id)+'">'
     +'<div class="panel-header"><span>'+esc(x.name)+'</span><span>'+esc(x.id)+'</span></div>'
     +'<div class="panel-value gradient-text '+valCol(x)+'" id="pv-'+esc(x.id)+'">'+(signals[x.id]&&Array.isArray(signals[x.id])?gvNum(signals[x.id],x.id).toFixed(1):'—')+'<small> '+esc(x.unit)+'</small></div>'
     +'<div class="panel-footer">'+esc(x.topic)+' · '+esc(x.waveType)+' '+x.intervalMs+'ms'+(x.modbusAddr?' · MB:'+x.modbusAddr:'')+' · <span id="lt-'+esc(x.id)+'">—</span></div>'
@@ -175,11 +180,35 @@ async function openMqttSettings(){
   document.getElementById('mqPort').value=cfg.port||1883;
   document.getElementById('mqUser').value=cfg.username||'';
   document.getElementById('mqPass').value=cfg.password&&cfg.password!=='••••••'?cfg.password:'';
+  if(document.getElementById('mqTls'))document.getElementById('mqTls').checked=!!cfg.use_tls;
   document.getElementById('mqPrefix').value=cfg.topic_prefix||'USEPI';
   document.getElementById('mqDiag').value=cfg.diagnostics_topic||'USEPI/diagnostics';
   document.getElementById('mqttOverlay').classList.add('open');
 }
 function closeMqtt(){document.getElementById('mqttOverlay').classList.remove('open')}
+async function testMqtt(){
+  const btn=document.getElementById('mqttTestBtn');
+  const res=document.getElementById('mqTestResult');
+  if(btn)btn.disabled=true;
+  if(res)res.textContent='ПРОВЕРКА...';
+  const body={
+    host:document.getElementById('mqHost').value.trim(),
+    port:+document.getElementById('mqPort').value||1883,
+    username:document.getElementById('mqUser').value.trim(),
+    password:document.getElementById('mqPass').value,
+    topic_prefix:document.getElementById('mqPrefix').value.trim()||'USEPI',
+    diagnostics_topic:document.getElementById('mqDiag').value.trim()||'USEPI/diagnostics',
+    use_tls:document.getElementById('mqTls')?document.getElementById('mqTls').checked:false,
+  };
+  const r=await api('/mqtt/test',{method:'POST',body:JSON.stringify(body)},6000);
+  if(btn)btn.disabled=false;
+  if(!r){if(res)res.textContent='ОШИБКА: нет ответа';return}
+  if(res){
+    if(r.ok)res.textContent='✓ ДОСТУПЕН ('+r.latency_ms+'ms)'+(r.tls?' TLS':'');
+    else res.textContent='✗ НЕДОСТУПЕН: '+(r.error||'?');
+    res.style.color=r.ok?'#34d399':'rgba(255,80,80,0.8)';
+  }
+}
 async function saveMqttSettings(e){
   e.preventDefault();
   const body={
@@ -189,6 +218,7 @@ async function saveMqttSettings(e){
     password:document.getElementById('mqPass').value,
     topic_prefix:document.getElementById('mqPrefix').value.trim()||'USEPI',
     diagnostics_topic:document.getElementById('mqDiag').value.trim()||'USEPI/diagnostics',
+    use_tls:document.getElementById('mqTls')?document.getElementById('mqTls').checked:false,
   };
   const req=api('/mqtt/config',{method:'PUT',body:JSON.stringify(body)});
   closeMqtt();
@@ -303,7 +333,7 @@ document.addEventListener('click',e=>{
   while(el&&el!==document.body&&el!==document.documentElement){
     if(el.hasAttribute&&el.hasAttribute('data-stop'))return; // внутри модалки/действий — не всплываем
     const a=el.dataset&&el.dataset.action;
-    if(a){a==='open-modal'?openModal():a==='close-modal'?closeModal():a==='confirm-yes'?confirmYes():a==='confirm-no'?confirmNo():a==='open-mqtt'?openMqttSettings():a==='close-mqtt'?closeMqtt():0;return}
+    if(a){a==='open-modal'?openModal():a==='close-modal'?closeModal():a==='confirm-yes'?confirmYes():a==='confirm-no'?confirmNo():a==='open-mqtt'?openMqttSettings():a==='close-mqtt'?closeMqtt():a==='test-mqtt'?testMqtt():0;return}
     if(el.hasAttribute&&el.hasAttribute('data-chart')){toggleChart(el.dataset.chart);return}
     if(el.hasAttribute&&el.hasAttribute('data-del')){delGen(el.dataset.del);return}
     if(el.hasAttribute&&el.hasAttribute('data-edit')){editGen(el.dataset.edit);return}
@@ -313,6 +343,10 @@ document.addEventListener('click',e=>{
 document.addEventListener('change',e=>{
   const tg=e.target.closest('[data-toggle]');
   if(tg&&e.target.matches('input[type=checkbox]')){togGen(tg.dataset.toggle)}
+});
+document.addEventListener('input',e=>{
+  const s=e.target.closest('[data-search]');
+  if(s){searchQuery=s.value;render()}
 });
 document.getElementById('generatorForm').addEventListener('submit',saveGenerator);
 document.getElementById('mqttForm').addEventListener('submit',saveMqttSettings);

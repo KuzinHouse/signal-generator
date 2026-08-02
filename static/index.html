@@ -42,6 +42,10 @@ body{background:radial-gradient(circle at 50%30%,#1a1a1a 0%,#000 70%);color:var(
 .stat-item span:last-child{font-size:clamp(6px,0.6vw,8px);color:var(--t3);text-transform:uppercase;margin-top:2px}
 
 /* Panels */
+.panels-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:clamp(6px,0.8vw,10px);flex-wrap:wrap}
+.panels-search{flex:1;min-width:140px;background:rgba(255,255,255,0.04);color:var(--t1);border:1px solid var(--border);padding:5px 10px;font-family:'JetBrains Mono',monospace;font-size:clamp(8px,0.8vw,10px);text-transform:uppercase;letter-spacing:0.5px;outline:none}
+.panels-search:focus{border-color:rgba(255,255,255,0.3)}
+.panels-count{font-family:'JetBrains Mono',monospace;font-size:clamp(7px,0.7vw,9px);color:var(--t3);text-transform:uppercase;letter-spacing:1px;white-space:nowrap}
 .panels-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(clamp(130px,14vw,180px),1fr));gap:clamp(6px,0.8vw,12px)}
 .panel{background:var(--glass);backdrop-filter:blur(10px);border:1px solid var(--border);padding:clamp(8px,1vw,14px);position:relative;display:flex;flex-direction:column;min-height:clamp(90px,11vh,120px);clip-path:polygon(0 0,calc(100%-10px) 0,100% 10px,100% 100%,10px 100%,0 calc(100%-10px));background-image:linear-gradient(135deg,rgba(255,255,255,0.06) 0%,rgba(255,255,255,0) 40%,rgba(255,255,255,0) 60%,rgba(255,255,255,0.02) 100%);cursor:pointer;transition:.3s}
 .panel:hover{background:rgba(255,255,255,0.04)}
@@ -165,6 +169,10 @@ body{background:radial-gradient(circle at 50%30%,#1a1a1a 0%,#000 70%);color:var(
 </div></div>
 
 <!-- Panels -->
+<div class="panels-toolbar">
+<input class="panels-search" id="panelsSearch" type="text" placeholder="Поиск: имя, id, топик..." data-search="1">
+<span class="panels-count" id="panelsCount">0 / 0</span>
+</div>
 <!-- PANELS_PLACEHOLDER -->
 
 <!-- Chart -->
@@ -263,12 +271,15 @@ body{background:radial-gradient(circle at 50%30%,#1a1a1a 0%,#000 70%);color:var(
 <div class="form-group"><label>Порт</label><input type="number" id="mqPort" value="1883" min="1" max="65535"></div>
 <div class="form-group"><label>Пользователь</label><input type="text" id="mqUser" placeholder="опционально"></div>
 <div class="form-group"><label>Пароль</label><input type="password" id="mqPass" placeholder="опционально"></div>
+<div class="form-group"><label>TLS</label><label class="toggle"><input type="checkbox" id="mqTls"><span class="toggle-slider"></span></label></div>
 <div class="section-label">ТОПИКИ</div>
 <div class="form-group"><label>Префикс топиков</label><input type="text" id="mqPrefix" placeholder="USEPI" value="USEPI"></div>
 <div class="form-group"><label>Топик диагностики</label><input type="text" id="mqDiag" placeholder="USEPI/diagnostics" value="USEPI/diagnostics"></div>
 <div class="form-group full" style="color:var(--t3);font-family:JetBrains Mono,monospace;font-size:clamp(7px,0.7vw,9px)">Формат: {префикс}/{id} — генераторы будут публиковаться в этот шаблон. Сохраняется в config/mqtt.json и переживает перезагрузку.</div>
+<div class="form-group full"><label id="mqTestResult" style="color:var(--t3)">&nbsp;</label></div>
 </div>
 <div class="modal-footer">
+<button type="button" class="btn-fut" data-action="test-mqtt" id="mqttTestBtn">ПРОВЕРИТЬ</button>
 <button type="button" class="btn-fut danger" data-action="close-mqtt">ОТМЕНА</button>
 <button type="submit" class="btn-fut primary" id="mqttSaveBtn">СОХРАНИТЬ</button>
 </div>

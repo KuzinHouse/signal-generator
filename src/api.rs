@@ -212,6 +212,42 @@ pub async fn broker_history(state: web::Data<AppState>) -> impl Responder {
     HttpResponse::Ok().json(h)
 }
 
+/// POST /api/mqtt/test — проверить доступность брокера (TCP-коннект с таймаутом)
+pub async fn test_mqtt_connection(
+    state: web::Data<AppState>,
+    req: actix_web::HttpRequest,
+    body: web::Json<MqttConfig>,
+) -> impl Responder {
+    if !auth_ok(&state, &req) {
+        return HttpResponse::Unauthorized().json(serde_json::json!({"error": "unauthorized"}));
+    }
+    let cfg = body.into_inner();
+    let addr = format!("{}:{}", cfg.host, cfg.port);
+    let started = std::time::Instant::now();
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        tokio::net::TcpStream::connect(&addr),
+    )
+    .await
+    {
+        Ok(Ok(_)) => HttpResponse::Ok().json(serde_json::json!({
+            "ok": true,
+            "host": cfg.host,
+            "port": cfg.port,
+            "tls": cfg.use_tls,
+            "latency_ms": started.elapsed().as_millis(),
+        })),
+        Ok(Err(e)) => HttpResponse::Ok().json(serde_json::json!({
+            "ok": false,
+            "error": e.to_string(),
+        })),
+        Err(_) => HttpResponse::Ok().json(serde_json::json!({
+            "ok": false,
+            "error": "timeout after 3s",
+        })),
+    }
+}
+
 /// GET /api/mqtt/config — текущие настройки брокера (пароль маскируем)
 pub async fn get_mqtt_config(state: web::Data<AppState>) -> impl Responder {
     let cfg = state.mqtt_config.lock().await;
@@ -301,6 +337,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             .route("/broker/history", web::get().to(broker_history))
             .route("/mqtt/config", web::get().to(get_mqtt_config))
             .route("/mqtt/config", web::put().to(update_mqtt_config))
+            .route("/mqtt/test", web::post().to(test_mqtt_connection))
             .route("/health", web::get().to(health)),
     );
 }
