@@ -145,9 +145,12 @@ async function saveGenerator(e){
     modbusAddr:+document.getElementById('fMbAddr').value,modbusFn:+document.getElementById('fMbFn').value,
     modbusType:+document.getElementById('fMbType').value,modbusScale:+document.getElementById('fMbScale').value,
     modbusSlave:+document.getElementById('fMbSlave').value};
-  if(ei){await api('/generators/'+ei,{method:'PUT',body:JSON.stringify({...body,id:ei})})}
-  else{await api('/generators',{method:'POST',body:JSON.stringify(body)})}
-  closeModal();loadAll();
+  const req = ei
+    ? api('/generators/'+ei,{method:'PUT',body:JSON.stringify({...body,id:ei})})
+    : api('/generators',{method:'POST',body:JSON.stringify(body)});
+  closeModal();          // закрываем сразу, не ждём ответ
+  await req;
+  loadAll();
 }
 function delGen(id){
   const g=gens.find(x=>x.id===id);if(!g)return;

@@ -38,9 +38,11 @@ pub async fn create_generator(
         config.id = uuid::Uuid::new_v4().to_string();
     }
     config.topic = format!("USEPI/{}", config.id);
-    let mut gens = state.generators.lock().await;
-    let _ = state.tx_shutdown.send(format!("new:{}", config.id));
-    gens.push(config.clone());
+    {
+        let mut gens = state.generators.lock().await;
+        let _ = state.tx_shutdown.send(format!("new:{}", config.id));
+        gens.push(config.clone());
+    } // lock released before save_config (avoids deadlock)
     save_config(&state).await;
     HttpResponse::Created().json(config)
 }
@@ -52,13 +54,19 @@ pub async fn update_generator(
     body: web::Json<GeneratorConfig>,
 ) -> impl Responder {
     let id = path.into_inner();
-    let mut gens = state.generators.lock().await;
-    if let Some(idx) = gens.iter().position(|g| g.id == id) {
-        let mut config = body.into_inner();
-        config.id = id.clone();
-        config.topic = format!("USEPI/{}", id);
-        gens[idx] = config.clone();
-        let _ = state.tx_shutdown.send(format!("update:{}", id));
+    let mut updated: Option<GeneratorConfig> = None;
+    {
+        let mut gens = state.generators.lock().await;
+        if let Some(idx) = gens.iter().position(|g| g.id == id) {
+            let mut config = body.into_inner();
+            config.id = id.clone();
+            config.topic = format!("USEPI/{}", id);
+            gens[idx] = config.clone();
+            let _ = state.tx_shutdown.send(format!("update:{}", id));
+            updated = Some(config);
+        }
+    } // lock released before save_config (avoids deadlock)
+    if let Some(config) = updated {
         save_config(&state).await;
         HttpResponse::Ok().json(config)
     } else {
@@ -72,10 +80,17 @@ pub async fn delete_generator(
     path: web::Path<String>,
 ) -> impl Responder {
     let id = path.into_inner();
-    let mut gens = state.generators.lock().await;
-    if let Some(idx) = gens.iter().position(|g| g.id == id) {
-        gens.remove(idx);
-        let _ = state.tx_shutdown.send(format!("remove:{}", id));
+    let deleted = {
+        let mut gens = state.generators.lock().await;
+        if let Some(idx) = gens.iter().position(|g| g.id == id) {
+            gens.remove(idx);
+            let _ = state.tx_shutdown.send(format!("remove:{}", id));
+            true
+        } else {
+            false
+        }
+    }; // lock released before save_config (avoids deadlock)
+    if deleted {
         save_config(&state).await;
         HttpResponse::Ok().json(serde_json::json!({"status": "deleted"}))
     } else {
@@ -89,14 +104,20 @@ pub async fn toggle_generator(
     path: web::Path<String>,
 ) -> impl Responder {
     let id = path.into_inner();
-    let mut gens = state.generators.lock().await;
-    if let Some(g) = gens.iter_mut().find(|g| g.id == id) {
-        g.enabled = !g.enabled;
-        let _ = state.tx_shutdown.send(format!(
-            "{}:{}", if g.enabled { "resume" } else { "pause" }, id
-        ));
+    let mut new_enabled: Option<bool> = None;
+    {
+        let mut gens = state.generators.lock().await;
+        if let Some(g) = gens.iter_mut().find(|g| g.id == id) {
+            g.enabled = !g.enabled;
+            new_enabled = Some(g.enabled);
+            let _ = state.tx_shutdown.send(format!(
+                "{}:{}", if g.enabled { "resume" } else { "pause" }, id
+            ));
+        }
+    } // lock released before save_config (avoids deadlock)
+    if let Some(enabled) = new_enabled {
         save_config(&state).await;
-        HttpResponse::Ok().json(serde_json::json!({"enabled": g.enabled}))
+        HttpResponse::Ok().json(serde_json::json!({"enabled": enabled}))
     } else {
         HttpResponse::NotFound().json(serde_json::json!({"error": "Generator not found"}))
     }
