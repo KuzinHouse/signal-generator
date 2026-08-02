@@ -546,12 +546,23 @@ async fn main() -> std::io::Result<()> {
         }
     });
 
+    // API-токен: если задан SIGNAL_API_TOKEN, мутации требуют Bearer-авторизацию
+    let api_token: Option<String> = std::env::var("SIGNAL_API_TOKEN")
+        .ok()
+        .filter(|t| !t.is_empty());
+    if api_token.is_some() {
+        info!("API auth enabled (SIGNAL_API_TOKEN) — mutations require Bearer token");
+    } else {
+        info!("API auth disabled — set SIGNAL_API_TOKEN to protect mutations");
+    }
+
     let state = web::Data::new(AppState {
         generators: generators.clone(),
         current_signals: current_signals.clone(),
         tx_shutdown: tx_shutdown.clone(),
         mqtt_handle: mqtt_arc.clone(),
         mqtt_config: mqtt_config_arc.clone(),
+        api_token,
         started_at: Instant::now(),
     });
 

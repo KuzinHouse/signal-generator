@@ -13,8 +13,22 @@ pub struct AppState {
     pub mqtt_handle: Arc<MqttHandle>,
     pub tx_shutdown: tokio::sync::broadcast::Sender<String>,
     pub mqtt_config: Arc<Mutex<MqttConfig>>,
+    pub api_token: Option<String>,
     #[allow(dead_code)]
     pub started_at: Instant,
+}
+
+/// Проверка Bearer-токена для мутирующих операций. Если токен не настроен — доступ открыт.
+pub fn auth_ok(state: &AppState, req: &actix_web::HttpRequest) -> bool {
+    let Some(token) = &state.api_token else {
+        return true;
+    };
+    req.headers()
+        .get(actix_web::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .map(|t| t == token)
+        .unwrap_or(false)
 }
 
 /// Сохранить конфиги в файл
@@ -32,8 +46,12 @@ pub async fn list_generators(state: web::Data<AppState>) -> impl Responder {
 /// POST /api/generators
 pub async fn create_generator(
     state: web::Data<AppState>,
+    req: actix_web::HttpRequest,
     body: web::Json<GeneratorConfig>,
 ) -> impl Responder {
+    if !auth_ok(&state, &req) {
+        return HttpResponse::Unauthorized().json(serde_json::json!({"error": "unauthorized"}));
+    }
     let mut config = body.into_inner();
     if config.id.is_empty() {
         config.id = uuid::Uuid::new_v4().to_string();
@@ -51,9 +69,13 @@ pub async fn create_generator(
 /// PUT /api/generators/{id}
 pub async fn update_generator(
     state: web::Data<AppState>,
+    req: actix_web::HttpRequest,
     path: web::Path<String>,
     body: web::Json<GeneratorConfig>,
 ) -> impl Responder {
+    if !auth_ok(&state, &req) {
+        return HttpResponse::Unauthorized().json(serde_json::json!({"error": "unauthorized"}));
+    }
     let id = path.into_inner();
     let mut updated: Option<GeneratorConfig> = None;
     {
@@ -78,8 +100,12 @@ pub async fn update_generator(
 /// DELETE /api/generators/{id}
 pub async fn delete_generator(
     state: web::Data<AppState>,
+    req: actix_web::HttpRequest,
     path: web::Path<String>,
 ) -> impl Responder {
+    if !auth_ok(&state, &req) {
+        return HttpResponse::Unauthorized().json(serde_json::json!({"error": "unauthorized"}));
+    }
     let id = path.into_inner();
     let deleted = {
         let mut gens = state.generators.lock().await;
@@ -102,8 +128,12 @@ pub async fn delete_generator(
 /// PUT /api/generators/{id}/toggle
 pub async fn toggle_generator(
     state: web::Data<AppState>,
+    req: actix_web::HttpRequest,
     path: web::Path<String>,
 ) -> impl Responder {
+    if !auth_ok(&state, &req) {
+        return HttpResponse::Unauthorized().json(serde_json::json!({"error": "unauthorized"}));
+    }
     let id = path.into_inner();
     let mut new_enabled: Option<bool> = None;
     {
@@ -195,8 +225,12 @@ pub async fn get_mqtt_config(state: web::Data<AppState>) -> impl Responder {
 /// PUT /api/mqtt/config — сохранить настройки брокера (перезапуск MQTT)
 pub async fn update_mqtt_config(
     state: web::Data<AppState>,
+    req: actix_web::HttpRequest,
     body: web::Json<MqttConfig>,
 ) -> impl Responder {
+    if !auth_ok(&state, &req) {
+        return HttpResponse::Unauthorized().json(serde_json::json!({"error": "unauthorized"}));
+    }
     let mut cfg = body.into_inner();
     if cfg.host.trim().is_empty() {
         return HttpResponse::BadRequest().json(serde_json::json!({"error": "host required"}));
