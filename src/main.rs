@@ -6,6 +6,7 @@ mod models;
 mod mqtt_client;
 mod persistence;
 mod ui;
+mod ws;
 
 use actix_files::Files;
 use actix_web::{middleware, web, App, HttpServer};
@@ -562,6 +563,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(state.clone())
             .wrap(middleware::Logger::default())
             .configure(api::configure_routes)
+            .route("/ws", web::get().to(ws::ws_index))
             .route("/", web::get().to(index_with_panels))
             .service(Files::new("/", "static").index_file("index.html"))
     })

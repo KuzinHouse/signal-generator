@@ -319,4 +319,39 @@ document.getElementById('mqttForm').addEventListener('submit',saveMqttSettings);
 
 /* ========== init ========== */
 initLiveChart();initBrokerChart();
-loadAll();setInterval(loadAll,1000);
+let ws=null,wsOk=false;
+function wsUrl(){const p=location.protocol==='https:'?'wss://':'ws://';return p+location.host+'/ws'}
+function applySnapshot(d){
+  if(!d)return;
+  if(Array.isArray(d.generators)){
+    if(JSON.stringify(gens)!==JSON.stringify(d.generators)){gens=d.generators;upCore();upChartUI();render()}
+  }
+  if(d.signals&&typeof d.signals==='object'){signals=d.signals;upPanels();upChart();upEv()}
+  if(d.broker){const b=d.broker;const $=id=>document.getElementById(id);
+    $('brokerVer').textContent=b.version||'—';
+    $('brokerClients').textContent=b.clients_connected??b.clientsConnected??0;
+    $('brokerClientsDetail').textContent='(max '+(b.clients_max??b.clientsMax??0)+', истекло '+(b.clients_expired??b.clientsExpired??0)+')';
+    $('brokerSubs').textContent=b.subscriptions??0;$('brokerTopics').textContent=b.topics??0;
+    $('brokerHeap').textContent=fmtBytes(b.heap_used??b.heapUsed??0);
+    $('brokerHeapPct').textContent='('+((b.heap_max??b.heapMax)?(((b.heap_used??b.heapUsed??0)/(b.heap_max??b.heapMax))*100).toFixed(0):'?')+'%)';
+    $('brokerRetained').textContent=b.retained_count??b.retainedCount??0;
+    $('brokerStore').textContent=b.store_count??b.storeCount??0;
+    $('brokerDot').className='mqtt-dot online';
+  }
+  if(Array.isArray(d.history)&&d.history.length){const l=d.history[d.history.length-1];
+    document.getElementById('brokerMsgRate').textContent=((l.msg_rate??l.msgRate)||0).toFixed(0);
+    document.getElementById('brokerByteRate').textContent=fmtBytes(l.byte_rate??l.byteRate)+'/с';
+    upBrokerChart(d.history);
+  }
+}
+function connectWs(){
+  try{ws=new WebSocket(wsUrl())}catch(e){return}
+  ws.onopen=()=>{wsOk=true;document.getElementById('sysStat').textContent='ОНЛАЙН (WS)'};
+  ws.onmessage=ev=>{try{applySnapshot(JSON.parse(ev.data))}catch(e){}};
+  ws.onclose=()=>{wsOk=false;document.getElementById('sysStat').textContent='ОНЛАЙН';setTimeout(connectWs,3000)};
+  ws.onerror=()=>{wsOk=false};
+}
+connectWs();
+// Fallback: polling, если WS недоступен
+setInterval(()=>{if(!wsOk)loadAll()},1000);
+loadAll();
