@@ -249,6 +249,8 @@ mod tests {
         cfg.wave_type = WaveType::Constant;
         cfg.drift = 0.0;
         cfg.noise_amp = 0.0;
+        cfg.spike_prob = 0.0; // отключаем спайки/дроп для детерминизма
+        cfg.drop_prob = 0.0;
         let mut state = GeneratorState::new(cfg);
         for _ in 0..10 {
             let v = state.next_value(Some(0.01)).unwrap();
@@ -276,6 +278,9 @@ mod tests {
         cfg.deadband = 5.0;
         cfg.wave_type = WaveType::Constant;
         cfg.offset = 0.0;
+        cfg.noise_amp = 0.0; // отключаем шум/спайки/дроп для детерминизма
+        cfg.spike_prob = 0.0;
+        cfg.drop_prob = 0.0;
         let mut state = GeneratorState::new(cfg);
         let v1 = state.next_value(Some(0.01)).unwrap();
         // С постоянным сигналом и deadband — должно вернуть то же
@@ -308,6 +313,7 @@ mod tests {
         let mut cfg = base_cfg();
         cfg.spike_prob = 1.0; // always spike
         cfg.spike_amp = 5.0;
+        cfg.drop_prob = 0.0; // иначе дроп может вернуть None и unwrap упадёт
         let mut state = GeneratorState::new(cfg);
         let v = state.next_value(Some(1.0)).unwrap();
         assert!(v.abs() > 5.0 || v.abs() < 5.0, "Spike magnitude: {}", v);
