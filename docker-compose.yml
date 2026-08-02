@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  signal-generator:
+    build: .
+    container_name: signal-generator
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - RUST_LOG=info
+    networks:
+      - iot-net
+
+networks:
+  iot-net:
+    driver: bridge

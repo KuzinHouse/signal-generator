@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Signal Generator | Cognitive Core</title>
+<link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@300;400;500;600&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#000;--glass:rgba(255,255,255,0.02);--border:rgba(255,255,255,0.08);--t1:#fff;--t2:rgba(255,255,255,0.5);--t3:rgba(255,255,255,0.25)}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-font-smoothing:antialiased}
+body{background:radial-gradient(circle at 50%30%,#1a1a1a 0%,#000 70%);color:var(--t1);font-family:'Exo 2',sans-serif;min-height:100vh;overflow-x:hidden;padding:clamp(8px,1.5vw,24px)}
+.bg-radar{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:90vmax;height:90vmax;border:1px solid rgba(255,255,255,0.05);border-radius:50%;z-index:0;pointer-events:none;mask-image:radial-gradient(circle,#000 40%,transparent 80%)}
+.bg-radar::before,.bg-radar::after{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);border:1px solid rgba(255,255,255,0.03);border-radius:50%}
+.bg-radar::before{width:90%;height:90%}.bg-radar::after{width:70%;height:70%}
+.app{max-width:1400px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(10px,1.5vh,20px);position:relative;z-index:10}
+
+/* Status */
+.status-bar{display:flex;justify-content:space-between;align-items:center;font-family:'JetBrains Mono',monospace;font-size:clamp(8px,0.8vw,10px);text-transform:uppercase;letter-spacing:1.5px;color:var(--t2);border-bottom:1px solid var(--border);padding-bottom:clamp(8px,1.2vh,14px);flex-wrap:wrap;gap:6px}
+.mqtt-dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:4px;background:rgba(255,255,255,0.15);transition:.5s}
+.mqtt-dot.online{background:#fff;box-shadow:0 0 10px rgba(255,255,255,0.5)}
+.mqtt-dot.offline{background:rgba(255,255,255,0.15)}
+
+/* Broker row */
+.broker-row{display:flex;gap:clamp(6px,0.8vw,10px);flex-wrap:wrap}
+.broker-cell{background:var(--glass);backdrop-filter:blur(10px);border:1px solid var(--border);padding:clamp(6px,0.8vw,10px) clamp(8px,1vw,14px);font-family:'JetBrains Mono',monospace;font-size:clamp(7px,0.7vw,9px);text-transform:uppercase;letter-spacing:0.5px;color:var(--t2);clip-path:polygon(0 0,calc(100%-6px) 0,100% 6px,100% 100%,6px 100%,0 calc(100%-6px));white-space:nowrap}
+.broker-cell strong{color:var(--t1);font-weight:400}
+
+/* Core */
+.core-reactor{position:relative;height:clamp(140px,18vh,240px);display:flex;justify-content:center;align-items:center}
+.reactor-svg{position:absolute;width:100%;height:100%;overflow:visible;filter:drop-shadow(0 0 5px rgba(255,255,255,0.2))}
+.rotator-slow{transform-origin:center;animation:rot 20s infinite linear}
+.rotator-medium{transform-origin:center;animation:rot 10s infinite linear}
+.rotator-reverse{transform-origin:center;animation:rotrev 15s infinite linear}
+@keyframes rot{100%{transform:rotate(360deg)}}@keyframes rotrev{100%{transform:rotate(-360deg)}}
+.core-content{z-index:2;text-align:center;width:clamp(180px,50%,500px)}
+.core-label{font-family:'JetBrains Mono',monospace;font-size:clamp(7px,0.8vw,10px);letter-spacing:2px;color:var(--t3);margin-bottom:4px}
+.gradient-text{background:linear-gradient(180deg,#fff 0%,#b0b0b0 50%,#fff 100%);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 8px rgba(255,255,255,0.3))}
+.core-title{font-size:clamp(12px,1.6vw,22px);font-weight:300;line-height:1.3}
+.core-stats{display:flex;justify-content:center;gap:clamp(12px,2vw,30px);margin-top:8px;font-family:'JetBrains Mono',monospace;flex-wrap:wrap}
+.stat-item{display:flex;flex-direction:column;align-items:center}
+.stat-item span:first-child{font-size:clamp(11px,1vw,16px);color:var(--t1)}
+.stat-item span:last-child{font-size:clamp(6px,0.6vw,8px);color:var(--t3);text-transform:uppercase;margin-top:2px}
+
+/* Panels */
+.panels-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(clamp(130px,14vw,180px),1fr));gap:clamp(6px,0.8vw,12px)}
+.panel{background:var(--glass);backdrop-filter:blur(10px);border:1px solid var(--border);padding:clamp(8px,1vw,14px);position:relative;display:flex;flex-direction:column;min-height:clamp(90px,11vh,120px);clip-path:polygon(0 0,calc(100%-10px) 0,100% 10px,100% 100%,10px 100%,0 calc(100%-10px));background-image:linear-gradient(135deg,rgba(255,255,255,0.06) 0%,rgba(255,255,255,0) 40%,rgba(255,255,255,0) 60%,rgba(255,255,255,0.02) 100%);cursor:pointer;transition:.3s}
+.panel:hover{background:rgba(255,255,255,0.04)}
+.panel.disabled{opacity:0.35}
+.panel.stuck{border-color:rgba(255,255,255,0.3);box-shadow:inset 0 0 20px rgba(255,255,255,0.05)}
+.panel.alarm{border-color:rgba(255,80,80,0.25);box-shadow:inset 0 0 15px rgba(255,80,80,0.06)}
+.panel.warning{border-color:rgba(255,200,50,0.2);box-shadow:inset 0 0 10px rgba(255,200,50,0.04)}
+.panel-header{display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:clamp(6px,0.7vw,9px);text-transform:uppercase;letter-spacing:1px;color:var(--t2)}
+.panel-value{font-size:clamp(18px,2.2vw,28px);font-weight:300;margin-top:6px;letter-spacing:-1px}
+.panel-value small{font-size:clamp(8px,0.8vw,11px);color:var(--t2)}
+.panel-footer{font-size:clamp(6px,0.7vw,9px);color:var(--t3);display:flex;align-items:center;gap:4px;font-family:'JetBrains Mono',monospace;text-transform:uppercase;margin-top:auto;padding-top:6px}
+.panel-footer::before{content:'>';color:var(--t1);margin-right:3px}
+.wave-icon{position:absolute;bottom:8px;right:8px;font-size:clamp(16px,1.8vw,24px);opacity:0.12;pointer-events:none}
+.panel-actions{position:absolute;top:6px;right:6px;display:none;gap:3px}
+.panel:hover .panel-actions{display:flex}
+.pn-action{width:18px;height:18px;padding:0;border:1px solid var(--border);background:rgba(0,0,0,0.5);color:var(--t2);border-radius:2px;cursor:pointer;font-size:8px;line-height:18px;text-align:center;transition:.2s}
+.pn-action:hover{background:rgba(255,255,255,0.1);color:#fff}
+.toggle{position:relative;display:inline-block;width:24px;height:12px;cursor:pointer}
+.toggle input{opacity:0;width:0;height:0}
+.toggle-slider{position:absolute;inset:0;background:rgba(255,255,255,0.1);border-radius:6px;transition:.3s}
+.toggle-slider::before{content:'';position:absolute;width:8px;height:8px;left:2px;bottom:2px;background:var(--t3);border-radius:50%;transition:.3s}
+.toggle input:checked+.toggle-slider{background:rgba(255,255,255,0.3)}
+.toggle input:checked+.toggle-slider::before{transform:translateX(12px);background:#fff}
+.stuck-badge{display:inline-block;padding:1px 4px;border:1px solid rgba(255,255,255,0.2);font-size:clamp(5px,0.6vw,7px);color:var(--t2);background:rgba(255,255,255,0.05);margin-left:4px}
+.value-ok{color:#fff}.value-warn{color:rgba(255,255,255,0.5)}.value-bad{color:rgba(255,255,255,0.2)}
+
+/* Chart */
+.chart-row{background:var(--glass);backdrop-filter:blur(10px);border:1px solid var(--border);clip-path:polygon(0 0,calc(100%-14px) 0,100% 14px,100% 100%,14px 100%,0 calc(100%-14px));background-image:linear-gradient(135deg,rgba(255,255,255,0.04) 0%,rgba(255,255,255,0) 50%);padding:clamp(8px,1vw,14px)}
+.chart-header{display:flex;justify-content:space-between;align-items:center;font-family:'JetBrains Mono',monospace;font-size:clamp(7px,0.7vw,9px);text-transform:uppercase;letter-spacing:1px;color:var(--t2);margin-bottom:8px}
+.chart-header select{background:rgba(255,255,255,0.05);color:var(--t1);border:1px solid var(--border);padding:3px 6px;font-family:'JetBrains Mono',monospace;font-size:clamp(7px,0.7vw,9px);text-transform:uppercase;outline:none;cursor:pointer}
+.chart-header select option{background:#111;color:#fff}
+.chart-wrap{height:clamp(80px,12vh,160px);position:relative}
+
+/* Event log */
+.event-log{display:flex;flex-direction:column;gap:4px;max-height:90px;overflow:hidden;mask-image:linear-gradient(to bottom,#000 70%,transparent 100%)}
+.event-item{display:flex;align-items:center;gap:8px;padding:4px 8px;font-family:'JetBrains Mono',monospace;font-size:clamp(6px,0.7vw,9px);text-transform:uppercase;letter-spacing:0.5px;background:rgba(255,255,255,0.01);border:1px solid rgba(255,255,255,0.03);clip-path:polygon(0 0,calc(100%-5px) 0,100% 5px,100% 100%,5px 100%,0 calc(100%-5px));color:rgba(255,255,255,0.2);transition:.3s}
+.event-item.alert{border-color:rgba(255,255,255,0.1);background:rgba(255,255,255,0.02);color:rgba(255,255,255,0.6)}
+.ev-time{color:rgba(255,255,255,0.12);white-space:nowrap}
+.ev-tag{padding:1px 4px;border:1px solid rgba(255,255,255,0.06);font-size:clamp(5px,0.6vw,7px);color:rgba(255,255,255,0.3);white-space:nowrap}
+.event-item.alert .ev-tag{border-color:rgba(255,255,255,0.2);color:#fff;background:rgba(255,255,255,0.06)}
+.ev-text{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* AI bar */
+.ai-bar{background:var(--glass);backdrop-filter:blur(10px);border:1px solid var(--border);padding:clamp(8px,1vw,14px);display:flex;align-items:center;justify-content:space-between;gap:10px;clip-path:polygon(0 0,calc(100%-14px) 0,100% 14px,100% 100%,14px 100%,0 calc(100%-14px));background-image:linear-gradient(90deg,rgba(255,255,255,0.05) 0%,rgba(255,255,255,0) 100%)}
+.ai-text{display:flex;flex-direction:column;gap:2px}
+.ai-text small{font-family:'JetBrains Mono',monospace;font-size:clamp(6px,0.7vw,9px);text-transform:uppercase;letter-spacing:1.5px;color:var(--t3)}
+.ai-text strong{color:var(--t1);font-weight:400;font-size:clamp(10px,1vw,14px)}
+.btn-fut{background:linear-gradient(180deg,rgba(255,255,255,0.1) 0%,rgba(255,255,255,0.02) 100%);border:1px solid var(--t2);color:var(--t1);padding:clamp(4px,0.7vw,7px) clamp(8px,1.2vw,14px);font-family:'JetBrains Mono',monospace;font-size:clamp(7px,0.7vw,9px);text-transform:uppercase;letter-spacing:1px;cursor:pointer;transition:.3s;clip-path:polygon(0 0,calc(100%-5px) 0,100% 5px,100% 100%,5px 100%,0 calc(100%-5px));white-space:nowrap}
+.btn-fut:hover{background:linear-gradient(180deg,rgba(255,255,255,0.3) 0%,rgba(255,255,255,0.1) 100%);box-shadow:0 0 15px rgba(255,255,255,0.3);text-shadow:0 0 5px #fff}
+.btn-fut.primary{border-color:#fff}
+.btn-fut.danger{border-color:rgba(255,255,255,0.2);color:rgba(255,255,255,0.4)}
+
+/* Modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.85);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;z-index:100;opacity:0;pointer-events:none;transition:.3s}
+.modal-overlay.open{opacity:1;pointer-events:auto}
+.modal{background:#0a0a0a;border:1px solid var(--border);width:clamp(340px,55vw,620px);max-height:85vh;overflow-y:auto;clip-path:polygon(0 0,calc(100%-18px) 0,100% 18px,100% 100%,18px 100%,0 calc(100%-18px))}
+.modal-header{display:flex;justify-content:space-between;align-items:center;padding:clamp(12px,1.5vw,18px);border-bottom:1px solid var(--border)}
+.modal-header h2{font-family:'Exo 2',sans-serif;font-weight:300;font-size:clamp(13px,1.2vw,16px);text-transform:uppercase;letter-spacing:1px}
+.btn-close{background:none;border:none;color:var(--t3);font-size:18px;cursor:pointer;transition:.2s}
+.btn-close:hover{color:#fff}
+.form-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:clamp(6px,0.8vw,12px);padding:clamp(12px,1.5vw,18px)}
+.form-group{display:flex;flex-direction:column;gap:3px}
+.form-group.wide{grid-column:span 2}
+.form-group.full{grid-column:1/-1}
+.form-group label{font-family:'JetBrains Mono',monospace;font-size:clamp(6px,0.6vw,8px);text-transform:uppercase;letter-spacing:0.5px;color:var(--t3)}
+.form-group input,.form-group select{background:rgba(255,255,255,0.04);color:var(--t1);border:1px solid var(--border);padding:4px 8px;font-family:'JetBrains Mono',monospace;font-size:clamp(9px,0.8vw,11px);outline:none}
+.form-group input:focus,.form-group select:focus{border-color:rgba(255,255,255,0.3)}
+.form-group select option{background:#111}
+.modal-footer{display:flex;justify-content:flex-end;gap:6px;padding:clamp(10px,1.2vw,16px);border-top:1px solid var(--border)}
+.section-label{grid-column:1/-1;font-family:'JetBrains Mono',monospace;font-size:clamp(7px,0.7vw,9px);text-transform:uppercase;letter-spacing:1px;color:var(--t3);border-bottom:1px solid var(--border);padding-bottom:4px;margin-top:4px}
+
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:2px}
+@media(max-width:480px){.status-bar{font-size:8px}.broker-row{overflow-x:auto;flex-wrap:nowrap}.broker-cell{font-size:7px;padding:4px 6px;white-space:nowrap}.panels-grid{grid-template-columns:1fr 1fr;gap:6px}.panel{min-height:80px;padding:8px}.panel-value{font-size:16px}.panel-footer{font-size:7px}.core-reactor{height:120px}.core-title{font-size:14px}.chart-wrap{height:80px}.event-item{font-size:7px;padding:3px 6px}.ai-bar{flex-direction:column;align-items:flex-start}.ai-buttons{width:100%;display:flex;justify-content:flex-end;gap:6px}.form-grid{grid-template-columns:1fr 1fr}.modal{width:95vw}.form-group label{font-size:6px}.form-group input,.form-group select{font-size:9px;padding:3px 5px}}
+@media(max-width:360px){.panels-grid{grid-template-columns:1fr}.core-reactor{height:90px}}
+</style>
+</head>
+<body>
+<div class="bg-radar"></div>
+<div class="app">
+
+<div class="status-bar">
+<span><span class="mqtt-dot" id="mqttDot"></span>СИСТЕМА: <span id="sysStat">ОНЛАЙН</span></span>
+<span>ГЕНЕРАТОРОВ: <span id="genCnt">0</span> · <span id="actCnt">0</span> АКТИВНО</span>
+</div>
+
+<!-- Broker Status -->
+<div class="broker-row" id="brokerRow">
+<div class="broker-cell"><span class="mqtt-dot" id="brokerDot"></span>ВЕРСИЯ: <strong id="brokerVer">—</strong></div>
+<div class="broker-cell">КЛИЕНТЫ: <strong id="brokerClients">0</strong> <small id="brokerClientsDetail" style="color:var(--t3)"></small></div>
+<div class="broker-cell">ПОДПИСКИ: <strong id="brokerSubs">0</strong> · ТОПИКИ: <strong id="brokerTopics">0</strong></div>
+<div class="broker-cell">СООБЩ/С: <strong id="brokerMsgRate">0</strong> · БАЙТ/С: <strong id="brokerByteRate">0</strong></div>
+<div class="broker-cell">ПАМЯТЬ: <strong id="brokerHeap">0</strong> <small id="brokerHeapPct" style="color:var(--t3)"></small></div>
+<div class="broker-cell">RETAINED: <strong id="brokerRetained">0</strong> · STORE: <strong id="brokerStore">0</strong></div>
+</div>
+
+<!-- Broker Mini-Chart -->
+<div class="chart-row" id="brokerChartRow">
+<div class="chart-header"><span>БРОКЕР · НАГРУЗКА</span><span style="color:var(--t3)">5s интервал</span></div>
+<div class="chart-wrap" style="height:clamp(60px,8vh,100px)"><canvas id="brokerChart"></canvas></div>
+</div>
+
+<!-- Core -->
+<div class="core-reactor">
+<svg class="reactor-svg" viewBox="0 0 300 300">
+<defs><linearGradient id="gf" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#fff" stop-opacity="1"/><stop offset="100%" stop-color="#fff" stop-opacity="0"/></linearGradient><radialGradient id="gg" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#fff" stop-opacity="0.06"/><stop offset="100%" stop-color="#fff" stop-opacity="0"/></radialGradient></defs>
+<circle cx="150" cy="150" r="80" fill="url(#gg)"/>
+<g class="rotator-slow"><circle cx="150" cy="150" r="140" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="1" stroke-dasharray="2 10"/><path d="M150 10 L150 25 M150 275 L150 290 M10 150 L25 150 M275 150 L290 150" stroke="#fff" stroke-width="1.5"/></g>
+<g class="rotator-reverse"><circle cx="150" cy="150" r="115" fill="none" stroke="url(#gf)" stroke-width="1.5" stroke-dasharray="40 10 10 10"/></g>
+<g class="rotator-medium"><circle cx="150" cy="150" r="95" fill="none" stroke="url(#gf)" stroke-width="1.5" stroke-dasharray="400 600"/></g>
+<path d="M150 0 L150 40 M150 260 L150 300 M0 150 L40 150 M260 150 L300 150" stroke="rgba(255,255,255,0.15)" stroke-width="1" fill="none"/>
+</svg>
+<div class="core-content">
+<div class="core-label">SIGNAL GENERATOR CORE</div>
+<div class="core-title gradient-text" id="coreTitle">Система синхронизирована.</div>
+<div class="core-stats"><div class="stat-item"><span id="sGen">0</span><span>ГЕНЕРАТОРОВ</span></div><div class="stat-item"><span id="sAct">0</span><span>АКТИВНО</span></div><div class="stat-item"><span id="sSig">0</span><span>СИГНАЛОВ/С</span></div></div>
+</div></div>
+
+<!-- Panels -->
+<!-- PANELS_PLACEHOLDER -->
+
+<!-- Chart -->
+<div class="chart-row">
+<div class="chart-header"><span>ОСЦИЛЛОГРАФ</span><span id="chartToggles" style="display:flex;gap:8px;flex-wrap:wrap"></span></div>
+<div class="chart-wrap"><canvas id="liveChart"></canvas></div>
+</div>
+
+<!-- Events -->
+<div class="event-log" id="eventLog"></div>
+
+<!-- AI Bar -->
+<div class="ai-bar">
+<div class="ai-text"><small>СОЗДАТЬ НОВЫЙ ГЕНЕРАТОР</small><strong>Waveform, частота, дрейф, шум, выбросы, деградация.</strong></div>
+<div class="ai-buttons"><button class="btn-fut primary" onclick="openModal()">+ СОЗДАТЬ</button></div>
+</div>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modalOverlay" onclick="closeModal()">
+<div class="modal" onclick="event.stopPropagation()">
+<div class="modal-header"><h2 id="modalTitle">НОВЫЙ ГЕНЕРАТОР</h2><button class="btn-close" onclick="closeModal()">&times;</button></div>
+<form id="generatorForm" onsubmit="saveGenerator(event)">
+<input type="hidden" id="editId">
+<div class="form-grid">
+
+<div class="section-label">ОСНОВНЫЕ</div>
+<div class="form-group"><label>Имя</label><input type="text" id="fName" required placeholder="Температура"></div>
+<div class="form-group"><label>ID (topic)</label><input type="text" id="fId" placeholder="auto"></div>
+<div class="form-group"><label>Волна</label><select id="fWaveType"><option value="Sine">Sine</option><option value="Sawtooth">Sawtooth</option><option value="Square">Square</option><option value="Noise">Noise</option><option value="Random">Random</option><option value="Constant">Constant</option></select></div>
+<div class="form-group"><label>Интервал (ms)</label><input type="number" id="fInterval" value="1000" min="10" step="10"></div>
+<div class="form-group"><label>Амплитуда</label><input type="number" id="fAmplitude" value="10" step="0.1"></div>
+<div class="form-group"><label>Смещение</label><input type="number" id="fOffset" value="0" step="0.1"></div>
+<div class="form-group"><label>Частота (Hz)</label><input type="number" id="fFrequency" value="0.1" step="0.01" min="0"></div>
+<div class="form-group"><label>Ед. изм.</label><input type="text" id="fUnit" value="°C"></div>
+<div class="form-group"><label>Мин</label><input type="number" id="fMin" value="-50" step="0.1"></div>
+<div class="form-group"><label>Макс</label><input type="number" id="fMax" value="150" step="0.1"></div>
+<div class="form-group"><label>Качество</label><input type="number" id="fQuality" value="100" min="0" max="100"></div>
+<div class="form-group"><label>Вкл</label><label class="toggle"><input type="checkbox" id="fEnabled" checked><span class="toggle-slider"></span></label></div>
+
+<div class="section-label">ДРЕЙФ И ТРЕНД</div>
+<div class="form-group"><label>Дрейф (ед/с)</label><input type="number" id="fDrift" value="0" step="0.01"></div>
+<div class="form-group"><label>Тренд (ед/с²)</label><input type="number" id="fTrend" value="0" step="0.01"></div>
+
+<div class="section-label">ШУМ И ВЫБРОСЫ</div>
+<div class="form-group"><label>Шум (доля ампл.)</label><input type="number" id="fNoiseAmp" value="0.02" step="0.01" min="0" max="1"></div>
+<div class="form-group"><label>Spike вероятность</label><input type="number" id="fSpikeProb" value="0.005" step="0.001" min="0" max="1"></div>
+<div class="form-group"><label>Spike амплитуда</label><input type="number" id="fSpikeAmp" value="3" step="0.1" min="0"></div>
+
+<div class="section-label">ГИСТЕРЕЗИС И DEADBAND</div>
+<div class="form-group"><label>Deadband</label><input type="number" id="fDeadband" value="0" step="0.1"></div>
+<div class="form-group"><label>Гистерезис</label><input type="number" id="fHysteresis" value="0" step="0.1"></div>
+
+<div class="section-label">ЗАЛИПАНИЕ</div>
+<div class="form-group"><label>Stick вероятность</label><input type="number" id="fStuckProb" value="0.001" step="0.001" min="0" max="1"></div>
+<div class="form-group"><label>Stick длит. (ms)</label><input type="number" id="fStuckDur" value="3000" min="100" step="100"></div>
+
+<div class="section-label">ДЖИТТЕР И ПОТЕРИ</div>
+<div class="form-group"><label>Джиттер (%)</label><input type="number" id="fJitter" value="5" step="1" min="0" max="100"></div>
+<div class="form-group"><label>Drop вероятность</label><input type="number" id="fDropProb" value="0.005" step="0.001" min="0" max="1"></div>
+
+<div class="section-label">ДЕГРАДАЦИЯ</div>
+<div class="form-group wide"><label>Скорость деградации (ед/с)</label><input type="number" id="fDegradation" value="0" step="0.1" placeholder="0 = нет, отриц. = восстановление"></div>
+
+<div class="section-label">MODBUS</div>
+<div class="form-group"><label>Адрес регистра</label><input type="number" id="fMbAddr" value="0" min="0" max="65535"></div>
+<div class="form-group"><label>Функция</label><select id="fMbFn"><option value="0">—</option><option value="1">1 Coil</option><option value="2">2 Discrete Input</option><option value="3" selected>3 Holding Register</option><option value="4">4 Input Register</option></select></div>
+<div class="form-group"><label>Тип данных</label><select id="fMbType"><option value="0" selected>u16</option><option value="1">i16</option><option value="2">u32</option><option value="3">i32</option><option value="4">float</option><option value="5">bool</option></select></div>
+<div class="form-group"><label>Масштаб</label><input type="number" id="fMbScale" value="1.0" step="0.01" min="0.001"></div>
+<div class="form-group"><label>Slave ID</label><input type="number" id="fMbSlave" value="1" min="0" max="255"></div>
+
+</div>
+<div class="modal-footer">
+<button type="button" class="btn-fut danger" onclick="closeModal()">ОТМЕНА</button>
+<button type="submit" class="btn-fut primary" id="modalSubmit">СОЗДАТЬ</button>
+</div>
+</form>
+</div></div>
+
+<!-- Confirm Delete Modal -->
+<div class="modal-overlay" id="confirmOverlay" onclick="confirmNo()">
+<div class="modal" onclick="event.stopPropagation()">
+<div class="modal-header"><h2>УДАЛИТЬ ГЕНЕРАТОР</h2><button class="btn-close" onclick="confirmNo()">&times;</button></div>
+<div class="modal-body" style="padding:clamp(14px,2vw,20px);font-size:clamp(12px,1.2vw,15px);color:var(--t2)">Удалить генератор <strong id="confirmName" style="color:var(--t1)"></strong>?</div>
+<div class="modal-footer"><button type="button" class="btn-fut danger" onclick="confirmNo()">ОТМЕНА</button><button type="button" class="btn-fut primary" onclick="confirmYes()">УДАЛИТЬ</button></div>
+</div></div>
+
+<script>
+const API='/api';let gens=[],signals={},chart=null,chartSel=[],le=[],bs={},brokerChart=null,bhTimer=0;
+try{initChart()}catch(e){}loadAll();setInterval(loadAll,1000);
+function gv(s,id){if(!s||!Array.isArray(s))return null;const e=s.find(x=>x['@id']===id||x['@id']===('sensor/'+id));return e?e.value:null}
+function gvNum(s,id){const v=gv(s,id);return typeof v==='number'?v:parseFloat(v)}
+function gvStr(s,id){const v=gv(s,id);return v!==null&&v!==undefined?String(v):'\u2014'}
+async function api(p,o={},timeout=5000){try{const c=new AbortController();const t=setTimeout(()=>c.abort(),timeout);const r=await fetch(API+p,{headers:{'Content-Type':'application/json'},signal:c.signal,...o});clearTimeout(t);if(!r.ok)throw Error(r.status);return await r.json()}catch(e){return null}}
+async function loadAll(){const d=await api('/generators');if(!d)return;if(JSON.stringify(gens)!==JSON.stringify(d)){gens=d;upCore();upChartUI();render()}upBroker();upCurrent()}
+async function upCurrent(){const ids=gens.map(g=>g.id);const res=[];for(let i=0;i<ids.length;i+=10){const chunk=ids.slice(i,i+10);res.push(...await Promise.all(chunk.map(id=>api('/generators/'+id+'/current'))))}res.forEach((s,i)=>{if(s&&Array.isArray(s))signals[ids[i]]=s});upPanels();upChart();upEv()}
+async function upBroker(){const b=await api('/broker');if(!b)return;bs=b;
+document.getElementById('brokerVer').textContent=b.version||'\u2014';document.getElementById('brokerClients').textContent=b.clientsConnected;
+document.getElementById('brokerClientsDetail').textContent='(max '+b.clientsMax+', и\u0441текло '+b.clientsExpired+')';
+document.getElementById('brokerSubs').textContent=b.subscriptions;document.getElementById('brokerTopics').textContent=b.topics;
+document.getElementById('brokerHeap').textContent=fmtBytes(b.heapUsed);document.getElementById('brokerHeapPct').textContent='('+(b.heapMax?((b.heapUsed/b.heapMax)*100).toFixed(0):'?')+'%)';
+document.getElementById('brokerRetained').textContent=b.retainedCount;document.getElementById('brokerStore').textContent=b.storeCount;
+document.getElementById('brokerDot').className='mqtt-dot online';
+try{const h=await api('/broker/history');if(h&&h.length){const l=h[h.length-1];document.getElementById('brokerMsgRate').textContent=l.msgRate.toFixed(0);document.getElementById('brokerByteRate').textContent=fmtBytes(l.byteRate)+'/\u0441';upBrokerChart(h)}}catch(e){}}
+function fmtBytes(b){if(!b||b<1)return'0';if(b<1024)return b+'B';if(b<1048576)return(b/1024).toFixed(0)+'KB';return(b/1048576).toFixed(0)+'MB'}
+async function saveGenerator(e){e.preventDefault();const ei=document.getElementById('editId').value;const body={id:document.getElementById('fId').value.trim(),name:document.getElementById('fName').value.trim(),waveType:document.getElementById('fWaveType').value,intervalMs:+document.getElementById('fInterval').value,amplitude:+document.getElementById('fAmplitude').value,offset:+document.getElementById('fOffset').value,frequency:+document.getElementById('fFrequency').value,unit:document.getElementById('fUnit').value,min:+document.getElementById('fMin').value,max:+document.getElementById('fMax').value,quality:+document.getElementById('fQuality').value,enabled:document.getElementById('fEnabled').checked,drift:+document.getElementById('fDrift').value,trend:+document.getElementById('fTrend').value,noiseAmp:+document.getElementById('fNoiseAmp').value,spikeProb:+document.getElementById('fSpikeProb').value,spikeAmp:+document.getElementById('fSpikeAmp').value,deadband:+document.getElementById('fDeadband').value,hysteresis:+document.getElementById('fHysteresis').value,stuckProb:+document.getElementById('fStuckProb').value,stuckDurationMs:+document.getElementById('fStuckDur').value,jitter:+document.getElementById('fJitter').value,dropProb:+document.getElementById('fDropProb').value,degradationRate:+document.getElementById('fDegradation').value,modbusAddr:+document.getElementById('fMbAddr').value,modbusFn:+document.getElementById('fMbFn').value,modbusType:+document.getElementById('fMbType').value,modbusScale:+document.getElementById('fMbScale').value,modbusSlave:+document.getElementById('fMbSlave').value};if(ei){await api('/generators/'+ei,{method:'PUT',body:JSON.stringify({...body,id:ei})})}else{await api('/generators',{method:'POST',body:JSON.stringify(body)})}closeModal();loadAll()}
+async function delGen(id){const g=gens.find(x=>x.id===id);if(!g)return;document.getElementById('confirmName').textContent=g.name+' ('+g.id+')';document.getElementById('confirmOverlay').classList.add('open');window._delId=id}
+function confirmYes(){const id=window._delId;window._delId=null;document.getElementById('confirmOverlay').classList.remove('open');api('/generators/'+id,{method:'DELETE'});delete signals[id];loadAll()}
+function confirmNo(){window._delId=null;document.getElementById('confirmOverlay').classList.remove('open')}
+async function togGen(id){await api('/generators/'+id+'/toggle',{method:'PUT'});loadAll()}
+const WI={Sine:'\u223F',Sawtooth:'\u2197',Square:'\u2293',Noise:'\u2248',Random:'?',Constant:'\u2014'};
+function render(){const g=document.getElementById('panelsGrid');if(!gens.length){g.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:30px;color:var(--t3);font-family:JetBrains Mono,monospace;font-size:10px;text-transform:uppercase">Нет генераторов</div>';return}
+g.innerHTML=gens.map(x=>'<div class="panel '+(x.enabled?'':'disabled')+' '+(panelCls(x))+'" id="pn-'+x.id+'" onclick="editGen(\''+x.id+'\')"><div class="panel-header"><span>'+esc(x.name)+'</span><span>'+esc(x.id)+'</span></div><div class="panel-value gradient-text '+valCol(x)+'" id="pv-'+x.id+'">'+(signals[x.id]&&Array.isArray(signals[x.id])?gvNum(signals[x.id],x.id).toFixed(1):'\u2014')+'<small> '+esc(x.unit)+'</small></div><div class="panel-footer">'+x.waveType+' '+x.intervalMs+'ms'+(x.modbusAddr?' \u00B7 MB:'+x.modbusAddr:'')+' \u00B7 <span id="lt-'+x.id+'">\u2014</span></div><div class="wave-icon">'+(WI[x.waveType]||'')+'</div><div class="panel-actions" onclick="event.stopPropagation()"><label class="toggle"><input type="checkbox"'+(x.enabled?' checked':'')+' onchange="togGen(\''+x.id+'\')"><span class="toggle-slider"></span></label><button class="pn-action" onclick="delGen(\''+x.id+'\')">✕</button></div><span style="display:none">'+(signals[x.id]&&Array.isArray(signals[x.id])?gvNum(signals[x.id],x.id).toFixed(1)+' '+esc(x.unit):'\u2014')+'</span></div>').join('')}
+function upPanels(){for(const g of gens){const el=document.getElementById('pv-'+g.id);const pn=document.getElementById('pn-'+g.id);if(!el)continue;const lt=document.getElementById('lt-'+g.id);const s=signals[g.id];if(s&&Array.isArray(s)){el.innerHTML=gvNum(s,g.id).toFixed(1)+'<small> '+esc(g.unit)+'</small>';el.className='panel-value gradient-text '+valCol(g);const ts=gvStr(s,'timestamp');if(ts&&ts!=='\\u2014'){const lat=Date.now()-new Date(ts).getTime();lt.textContent=lat<1000?lat+'ms':(lat/1000).toFixed(1)+'s'}else lt.textContent='\\u2014'}if(pn){pn.className='panel'+(g.enabled?'':' disabled')+' '+panelCls(g)}}}
+function valCol(g){const s=signals[g.id];if(!s||!Array.isArray(s))return'value-ok';const v=gvNum(s,g.id),q=gvNum(s,g.id+'_quality');const r=Math.abs(v-g.offset)/(g.amplitude||1);if(r>0.9||q<50)return'value-bad';if(r>0.7||q<80)return'value-warn';return'value-ok'}
+function panelCls(g){const s=signals[g.id];if(!s||!Array.isArray(s))return'';const v=gvNum(s,g.id),q=gvNum(s,g.id+'_quality');const r=Math.abs(v-g.offset)/(g.amplitude||1);if(r>0.9||q<50)return'alarm';if(r>0.7||q<80)return'warning';return''}
+function upCore(){const t=gens.length,a=gens.filter(g=>g.enabled).length,rate=gens.filter(g=>g.enabled).reduce((s,g)=>s+(g.intervalMs>0?1000/g.intervalMs:0),0);document.getElementById('sGen').textContent=t;document.getElementById('sAct').textContent=a;document.getElementById('sSig').textContent=rate.toFixed(0);document.getElementById('genCnt').textContent=t;document.getElementById('actCnt').textContent=a;document.getElementById('coreTitle').textContent=a?'Активно '+a+' генераторов.':(t?'В\u0441е генераторы о\u0441тановлены':'Си\u0441тема в режиме ожидания.')}
+function upEv(){const n=new Date();for(const g of gens){const s=signals[g.id];if(!s||!Array.isArray(s)||!s.length)continue;const v=gvNum(s,g.id);if(isNaN(v))continue;const k=g.id+'_'+v.toFixed(2);if(le.some(e=>e.k===k))continue;le.unshift({k,time:n.toTimeString().slice(0,8),tag:g.waveType.toUpperCase(),text:g.name+': '+v.toFixed(2)+' '+g.unit,alert:Math.abs(v)>g.amplitude*0.9})}if(le.length>20)le.length=20;document.getElementById('eventLog').innerHTML=le.slice(0,5).map(e=>'<div class="event-item'+(e.alert?' alert':'')+'"><span class="ev-time">'+e.time+'</span><span class="ev-tag">'+e.tag+'</span><span class="ev-text">'+esc(e.text)+'</span></div>').join('')}
+function openModal(){document.getElementById('editId').value='';document.getElementById('modalTitle').textContent='НОВЫЙ ГЕНЕРАТОР';document.getElementById('modalSubmit').textContent='СОЗДАТЬ';document.getElementById('generatorForm').reset();document.getElementById('fEnabled').checked=true;document.getElementById('modalOverlay').classList.add('open')}
+function closeModal(){document.getElementById('modalOverlay').classList.remove('open')}
+function rnd(v,d){return typeof v==='number'?parseFloat(v.toFixed(d||4)):v}
+function editGen(id){const g=gens.find(x=>x.id===id);if(!g)return;const s=id=>document.getElementById(id);s('editId').value=g.id;s('modalTitle').textContent='РЕДАКТИРОВАТЬ';s('modalSubmit').textContent='СОХРАНИТЬ';s('fId').value=g.id;s('fName').value=g.name;s('fWaveType').value=g.waveType;s('fInterval').value=g.intervalMs;s('fAmplitude').value=rnd(g.amplitude);s('fOffset').value=rnd(g.offset);s('fFrequency').value=rnd(g.frequency,6);s('fUnit').value=g.unit;s('fMin').value=rnd(g.min);s('fMax').value=rnd(g.max);s('fQuality').value=g.quality;s('fEnabled').checked=g.enabled;s('fDrift').value=rnd(g.drift||0);s('fTrend').value=rnd(g.trend||0);s('fNoiseAmp').value=rnd(g.noiseAmp||0);s('fSpikeProb').value=rnd(g.spikeProb||0);s('fSpikeAmp').value=rnd(g.spikeAmp||0);s('fDeadband').value=rnd(g.deadband||0);s('fHysteresis').value=rnd(g.hysteresis||0);s('fStuckProb').value=rnd(g.stuckProb||0);s('fStuckDur').value=g.stuckDurationMs||3000;s('fJitter').value=rnd(g.jitter||0);s('fDropProb').value=rnd(g.dropProb||0);s('fDegradation').value=rnd(g.degradationRate||0);s('fMbAddr').value=g.modbusAddr||0;s('fMbFn').value=g.modbusFn||0;s('fMbType').value=g.modbusType||0;s('fMbScale').value=rnd(g.modbusScale||1.0);s('fMbSlave').value=g.modbusSlave||1;s('modalOverlay').classList.add('open')}
+function initChart(){const ctx=document.getElementById('liveChart').getContext('2d');chart=new Chart(ctx,{type:'line',data:{datasets:[]},options:{responsive:true,maintainAspectRatio:false,animation:{duration:200},interaction:{intersect:false,mode:'nearest'},scales:{x:{type:'linear',grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'rgba(255,255,255,0.25)',font:{size:8},maxTicksLimit:8,callback:v=>new Date(v).toLocaleTimeString()}},y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'rgba(255,255,255,0.25)',font:{size:8}}}},plugins:{legend:{labels:{color:'rgba(255,255,255,0.35)',font:{size:9},usePointStyle:true,padding:10}}}}})}
+function upChartUI(){const t=document.getElementById('chartToggles');const cols=['#00f0ff','#34d399','#fbbf24','#a855f7','#ef4444','#3b82f6','#fff','#f472b6'];t.innerHTML=gens.map((g,i)=>'<label style="cursor:pointer;display:inline-flex;align-items:center;gap:3px;font-size:clamp(7px,0.7vw,9px);font-family:JetBrains Mono,monospace;text-transform:uppercase;letter-spacing:0.5px;color:'+(chartSel.includes(g.id)?cols[i%cols.length]:'var(--t3)')+'" onclick="toggleChart(\''+g.id+'\')"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:'+cols[i%cols.length]+';opacity:'+(chartSel.includes(g.id)?'1':'0.3')+'"></span>'+g.name+'</label>').join('')}
+function toggleChart(id){const i=chartSel.indexOf(id);if(i>-1)chartSel.splice(i,1);else chartSel.push(id);if(chart){chart.data.datasets=[];chart.update()}upChartUI()}
+function upChart(){try{const n=Date.now();if(!chart)return;for(const id of chartSel){const s=signals[id];if(!s||!Array.isArray(s)||!s.length)continue;const v=gvNum(s,id);if(isNaN(v))continue;let ds=chart.data.datasets.find(d=>d.label===id);if(!ds){const colors=['#00f0ff','#34d399','#fbbf24','#a855f7','#ef4444','#3b82f6','#fff','#f472b6'];const c=colors[chart.data.datasets.length%colors.length];ds={label:id,data:[],borderColor:c,backgroundColor:c+'20',pointRadius:0,pointHoverRadius:3,borderWidth:1.5,tension:0.3,fill:false};chart.data.datasets.push(ds)}ds.data.push({x:n,y:v});const co=n-30000;ds.data=ds.data.filter(p=>p.x>co);if(ds.data.length>60)ds.data=ds.data.slice(-60)}chart.data.datasets=chart.data.datasets.filter(ds=>chartSel.includes(ds.label));chart.update('none')}catch(e){}}
+function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+function initBrokerChart(){const c=document.getElementById('brokerChart');if(!c)return;brokerChart=c;brokerChart.width=c.clientWidth||600;brokerChart.height=c.clientHeight||80;brokerChart.buffer=[]}
+function upBrokerChart(h){if(!brokerChart||!h||!h.length)return;const buf=brokerChart.buffer;const now=Date.now();for(const x of h){buf.push({x:now,y1:x.msgRate,y2:x.heapPct})}const co=now-600000;while(buf.length&&buf[0].x<co)buf.shift();if(buf.length>120)buf.splice(0,buf.length-120);const ctx=brokerChart.getContext('2d');const w=brokerChart.width;const hgt=brokerChart.height;ctx.clearRect(0,0,w,hgt);if(buf.length<2)return;const maxRate=Math.max(...buf.map(p=>p.y1),1);const maxHeap=Math.max(...buf.map(p=>p.y2),1);ctx.strokeStyle='rgba(255,255,255,0.5)';ctx.lineWidth=1;ctx.beginPath();buf.forEach((p,i)=>{const x=i/(buf.length-1)*w;const y=hgt-(p.y1/maxRate)*(hgt-20)-10;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)});ctx.stroke();ctx.strokeStyle='rgba(255,255,255,0.2)';ctx.setLineDash([2,2]);ctx.beginPath();buf.forEach((p,i)=>{const x=i/(buf.length-1)*w;const y=hgt-(p.y2/maxHeap)*(hgt-20)-10;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)});ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='rgba(255,255,255,0.15)';ctx.font='8px monospace';ctx.fillText(Math.round(maxRate)+' msg/s',4,10);ctx.fillStyle='rgba(255,255,255,0.08)';ctx.fillText(Math.round(maxHeap)+'%',4,hgt-4);}
+initBrokerChart();
+</script>
+</body>
+</html>
