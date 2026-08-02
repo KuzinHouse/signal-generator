@@ -165,10 +165,21 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
 }
 
 /// HTTP-хендлер: апгрейд соединения до WebSocket
+/// Если включён SIGNAL_API_TOKEN — клиент должен передать ?token=<token>
 pub async fn ws_index(
     req: actix_web::HttpRequest,
     stream: actix_web::web::Payload,
     state: actix_web::web::Data<AppState>,
 ) -> Result<actix_web::HttpResponse, actix_web::Error> {
+    if let Some(token) = &state.api_token {
+        let ok = actix_web::web::Query::<std::collections::HashMap<String, String>>::from_query(
+            req.query_string(),
+        )
+        .map(|q| q.get("token").map(|t| t == token).unwrap_or(false))
+        .unwrap_or(false);
+        if !ok {
+            return Ok(actix_web::HttpResponse::Unauthorized().finish());
+        }
+    }
     ws::start(WsSession::new(state), &req, stream)
 }

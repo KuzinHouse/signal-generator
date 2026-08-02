@@ -44,13 +44,40 @@ async function handleImportFile(file){
 function rnd(v,d){return typeof v==='number'?parseFloat(v.toFixed(d||4)):v}
 function fmtBytes(b){if(!b||b<1)return'0';if(b<1024)return b+'B';if(b<1048576)return(b/1024).toFixed(0)+'KB';return(b/1048576).toFixed(0)+'MB'}
 
-async function api(p,o={},timeout=5000){try{const c=new AbortController();const t=setTimeout(()=>c.abort(),timeout);const r=await fetch(API+p,{headers:{'Content-Type':'application/json'},signal:c.signal,...o});clearTimeout(t);if(!r.ok)throw Error(r.status);return await r.json()}catch(e){return null}}
+async function api(p,o={},timeout=5000){
+  try{
+    const c=new AbortController();const t=setTimeout(()=>c.abort(),timeout);
+    const headers={'Content-Type':'application/json'};
+    const tok=localStorage.getItem('signalApiToken');
+    if(tok)headers['Authorization']='Bearer '+tok;
+    const r=await fetch(API+p,{headers,signal:c.signal,...o});
+    clearTimeout(t);
+    if(r.status===401&&p.startsWith('/api/')&&o.method&&o.method!=='GET'){
+      // для мутаций при 401 — запросить токен и повторить один раз
+      if(ensureToken()){
+        const h2={'Content-Type':'application/json'};
+        const t2=localStorage.getItem('signalApiToken');
+        if(t2)h2['Authorization']='Bearer '+t2;
+        const r2=await fetch(API+p,{headers:h2,signal:c.signal,...o});
+        if(!r2.ok)throw Error(r2.status);
+        return await r2.json();
+      }
+    }
+    if(!r.ok)throw Error(r.status);
+    return await r.json();
+  }catch(e){return null}
+}
 
 /* ========== данные ========== */
 async function loadAll(){
   const d=await api('/generators');
   if(!d)return;
   if(JSON.stringify(gens)!==JSON.stringify(d)){gens=d;upCore();upChartUI();render()}
+  // версия приложения — один раз
+  if(document.getElementById('appVer').textContent==='—'){
+    const h=await api('/health');
+    if(h&&h.version)document.getElementById('appVer').textContent=h.version;
+  }
   upBroker();upCurrent();
 }
 async function upCurrent(){
@@ -417,7 +444,20 @@ document.getElementById('importFile').addEventListener('change',e=>{
 /* ========== init ========== */
 initLiveChart();initBrokerChart();
 let ws=null,wsOk=false;
-function wsUrl(){const p=location.protocol==='https:'?'wss://':'ws://';return p+location.host+'/ws'}
+function wsUrl(){
+  const p=location.protocol==='https:'?'wss://':'ws://';
+  let u=p+location.host+'/ws';
+  const t=localStorage.getItem('signalApiToken');
+  if(t)u+='?token='+encodeURIComponent(t);
+  return u;
+}
+// При 401 от API — запросить токен и сохранить (для защищённых инсталляций)
+function ensureToken(){
+  if(localStorage.getItem('signalApiToken'))return true;
+  const t=prompt('API защищён. Введите токен (SIGNAL_API_TOKEN):');
+  if(t){localStorage.setItem('signalApiToken',t);return true}
+  return false;
+}
 function applySnapshot(d){
   if(!d)return;
   if(Array.isArray(d.generators)){
