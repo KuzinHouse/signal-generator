@@ -1,6 +1,6 @@
-use std::time::Instant;
-use rand::Rng;
 use crate::config::{GeneratorConfig, WaveType};
+use rand::Rng;
+use std::time::Instant;
 
 /// Состояние генератора: конфиг + runtime-переменные для эффектов
 #[derive(Debug, Clone)]
@@ -87,7 +87,8 @@ impl GeneratorState {
 
         // === Вероятность залипания ===
         if cfg.stuck_prob > 0.0 && rng.gen::<f64>() < cfg.stuck_prob {
-            self.stuck_until = Some(Instant::now() + std::time::Duration::from_millis(cfg.stuck_duration_ms));
+            self.stuck_until =
+                Some(Instant::now() + std::time::Duration::from_millis(cfg.stuck_duration_ms));
         }
 
         // === Тренд (ускорение) ===
@@ -104,7 +105,9 @@ impl GeneratorState {
         let elapsed = self.started_at.elapsed().as_secs_f64();
         let base_value = match cfg.wave_type {
             WaveType::Sine => {
-                cfg.offset + self.drift_acc + cfg.amplitude * (2.0 * std::f64::consts::PI * cfg.frequency * elapsed).sin()
+                cfg.offset
+                    + self.drift_acc
+                    + cfg.amplitude * (2.0 * std::f64::consts::PI * cfg.frequency * elapsed).sin()
             }
             WaveType::Sawtooth => {
                 let phase = (elapsed * cfg.frequency) % 1.0;
@@ -112,7 +115,11 @@ impl GeneratorState {
             }
             WaveType::Square => {
                 let phase = (elapsed * cfg.frequency) % 1.0;
-                let sq = if phase < 0.5 { cfg.amplitude } else { -cfg.amplitude };
+                let sq = if phase < 0.5 {
+                    cfg.amplitude
+                } else {
+                    -cfg.amplitude
+                };
                 cfg.offset + self.drift_acc + sq
             }
             WaveType::Noise => {
@@ -134,9 +141,7 @@ impl GeneratorState {
                 let mid = (cfg.max + cfg.min) * 0.5;
                 mid + self.drift_acc + spread * (2.0 * rng.gen::<f64>() - 1.0)
             }
-            WaveType::Constant => {
-                cfg.offset + self.drift_acc
-            }
+            WaveType::Constant => cfg.offset + self.drift_acc,
         };
 
         let mut raw = base_value;
@@ -162,12 +167,14 @@ impl GeneratorState {
             }
         } else if cfg.degradation_rate < 0.0 {
             // отрицательная = восстановление
-            self.effective_quality = (self.effective_quality - cfg.degradation_rate * dt).min(cfg.quality as f64);
+            self.effective_quality =
+                (self.effective_quality - cfg.degradation_rate * dt).min(cfg.quality as f64);
         }
 
         // === Качество влияет на шум ===
         if self.effective_quality < 100.0 {
-            let quality_noise = (100.0 - self.effective_quality) / 100.0 * cfg.amplitude.max(1.0) * 0.05;
+            let quality_noise =
+                (100.0 - self.effective_quality) / 100.0 * cfg.amplitude.max(1.0) * 0.05;
             let qn: f64 = rng.gen();
             raw += quality_noise * (qn * 2.0 - 1.0);
         }

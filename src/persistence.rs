@@ -12,18 +12,20 @@ pub async fn load() -> Option<Vec<GeneratorConfig>> {
         return None;
     }
     match fs::read_to_string(&path).await {
-        Ok(data) => {
-            match serde_json::from_str::<Vec<GeneratorConfig>>(&data) {
-                Ok(configs) => {
-                    log::info!("Loaded {} generator configs from {}", configs.len(), CONFIG_FILE);
-                    Some(configs)
-                }
-                Err(e) => {
-                    log::error!("Failed to parse {}: {}", CONFIG_FILE, e);
-                    None
-                }
+        Ok(data) => match serde_json::from_str::<Vec<GeneratorConfig>>(&data) {
+            Ok(configs) => {
+                log::info!(
+                    "Loaded {} generator configs from {}",
+                    configs.len(),
+                    CONFIG_FILE
+                );
+                Some(configs)
             }
-        }
+            Err(e) => {
+                log::error!("Failed to parse {}: {}", CONFIG_FILE, e);
+                None
+            }
+        },
         Err(e) => {
             log::error!("Failed to read {}: {}", CONFIG_FILE, e);
             None

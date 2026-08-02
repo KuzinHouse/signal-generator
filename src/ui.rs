@@ -46,18 +46,33 @@ pub fn render_panels_html(generators: &[GeneratorConfig], signals: &[Vec<FlatEnt
 /// Извлечь значение и латентность из сигнала
 fn signal_value(g: &GeneratorConfig, signals: &[Vec<FlatEntry>]) -> (String, String) {
     let full_id = format!("sensor/{}", g.id);
-    let sig = signals.iter().find(|p| {
-        p.iter().any(|e| e.id == full_id || e.id == g.id)
-    });
-    let Some(sig) = sig else { return ("—".to_string(), "—".to_string()) };
-    let val = sig.iter().find(|e| e.id == g.id).and_then(|e| e.entry_value.as_f64());
-    let ts = sig.iter().find(|e| e.id == "timestamp").and_then(|e| e.entry_value.as_str());
-    let val_str = val.map(|v| format!("{:.1}", v)).unwrap_or_else(|| "—".to_string());
+    let sig = signals
+        .iter()
+        .find(|p| p.iter().any(|e| e.id == full_id || e.id == g.id));
+    let Some(sig) = sig else {
+        return ("—".to_string(), "—".to_string());
+    };
+    let val = sig
+        .iter()
+        .find(|e| e.id == g.id)
+        .and_then(|e| e.entry_value.as_f64());
+    let ts = sig
+        .iter()
+        .find(|e| e.id == "timestamp")
+        .and_then(|e| e.entry_value.as_str());
+    let val_str = val
+        .map(|v| format!("{:.1}", v))
+        .unwrap_or_else(|| "—".to_string());
     let lat_str = match ts {
         Some(t) => match chrono::DateTime::parse_from_rfc3339(t) {
             Ok(dt) => {
-                let age_ms = (chrono::Utc::now() - dt.with_timezone(&chrono::Utc)).num_milliseconds();
-                if age_ms < 1000 { format!("{}ms", age_ms) } else { format!("{:.1}s", age_ms as f64 / 1000.0) }
+                let age_ms =
+                    (chrono::Utc::now() - dt.with_timezone(&chrono::Utc)).num_milliseconds();
+                if age_ms < 1000 {
+                    format!("{}ms", age_ms)
+                } else {
+                    format!("{:.1}s", age_ms as f64 / 1000.0)
+                }
             }
             Err(_) => "—".to_string(),
         },
@@ -69,18 +84,33 @@ fn signal_value(g: &GeneratorConfig, signals: &[Vec<FlatEntry>]) -> (String, Str
 /// Класс панели по состоянию сигнала
 fn panel_class(g: &GeneratorConfig, signals: &[Vec<FlatEntry>]) -> String {
     let full_id = format!("sensor/{}", g.id);
-    let sig = signals.iter().find(|p| p.iter().any(|e| e.id == full_id || e.id == g.id));
+    let sig = signals
+        .iter()
+        .find(|p| p.iter().any(|e| e.id == full_id || e.id == g.id));
     let Some(sig) = sig else { return String::new() };
-    let v = sig.iter().find(|e| e.id == g.id).and_then(|e| e.entry_value.as_f64());
-    let q = sig.iter().find(|e| e.id == format!("{}_quality", g.id)).and_then(|e| e.entry_value.as_u64());
+    let v = sig
+        .iter()
+        .find(|e| e.id == g.id)
+        .and_then(|e| e.entry_value.as_f64());
+    let q = sig
+        .iter()
+        .find(|e| e.id == format!("{}_quality", g.id))
+        .and_then(|e| e.entry_value.as_u64());
     let Some(v) = v else { return String::new() };
     let q = q.unwrap_or(100);
     let r = (v - g.offset).abs() / g.amplitude.max(1.0);
-    if r > 0.9 || q < 50 { "alarm".to_string() }
-    else if r > 0.7 || q < 80 { "warning".to_string() }
-    else { String::new() }
+    if r > 0.9 || q < 50 {
+        "alarm".to_string()
+    } else if r > 0.7 || q < 80 {
+        "warning".to_string()
+    } else {
+        String::new()
+    }
 }
 
 fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }

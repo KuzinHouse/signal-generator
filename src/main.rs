@@ -8,15 +8,15 @@ mod persistence;
 mod ui;
 
 use actix_files::Files;
-use actix_web::{App, HttpServer, web, middleware};
+use actix_web::{middleware, web, App, HttpServer};
 use api::AppState;
 use config::{GeneratorConfig, WaveType};
 use generator::GeneratorState;
 use log::info;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Mutex;
 use std::time::Instant;
+use tokio::sync::Mutex;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -233,46 +233,256 @@ async fn main() -> std::io::Result<()> {
     ];
     // Добавляем 40 дополнительных генераторов из шаблонов
     let scenarios = [
-        ("temp", "Температура", "°C", WaveType::Sine, 1000_u64, 10.0_f64, -20.0_f64, 200.0_f64, 0.1_f64),
-        ("press", "Давление", "bar", WaveType::Noise, 500, 5.0, 0.0, 50.0, 0.0),
-        ("level", "Уровень", "%", WaveType::Sawtooth, 2000, 50.0, 0.0, 100.0, 0.02),
-        ("flow", "Расход", "m³/h", WaveType::Sine, 1000, 30.0, 0.0, 200.0, 0.05),
-        ("vibro", "Вибрация", "mm/s", WaveType::Random, 100, 8.0, 0.0, 30.0, 0.0),
-        ("speed", "Скорость", "rpm", WaveType::Sine, 500, 500.0, 0.0, 3000.0, 0.01),
-        ("current", "Ток", "A", WaveType::Sine, 200, 50.0, 0.0, 400.0, 0.02),
-        ("voltage", "Напряжение", "V", WaveType::Noise, 300, 20.0, 0.0, 250.0, 0.0),
-        ("power", "Мощность", "kW", WaveType::Sine, 1000, 100.0, 0.0, 500.0, 0.03),
-        ("freq", "Частота сети", "Hz", WaveType::Constant, 1000, 0.5, 50.0, 60.0, 0.0),
+        (
+            "temp",
+            "Температура",
+            "°C",
+            WaveType::Sine,
+            1000_u64,
+            10.0_f64,
+            -20.0_f64,
+            200.0_f64,
+            0.1_f64,
+        ),
+        (
+            "press",
+            "Давление",
+            "bar",
+            WaveType::Noise,
+            500,
+            5.0,
+            0.0,
+            50.0,
+            0.0,
+        ),
+        (
+            "level",
+            "Уровень",
+            "%",
+            WaveType::Sawtooth,
+            2000,
+            50.0,
+            0.0,
+            100.0,
+            0.02,
+        ),
+        (
+            "flow",
+            "Расход",
+            "m³/h",
+            WaveType::Sine,
+            1000,
+            30.0,
+            0.0,
+            200.0,
+            0.05,
+        ),
+        (
+            "vibro",
+            "Вибрация",
+            "mm/s",
+            WaveType::Random,
+            100,
+            8.0,
+            0.0,
+            30.0,
+            0.0,
+        ),
+        (
+            "speed",
+            "Скорость",
+            "rpm",
+            WaveType::Sine,
+            500,
+            500.0,
+            0.0,
+            3000.0,
+            0.01,
+        ),
+        (
+            "current",
+            "Ток",
+            "A",
+            WaveType::Sine,
+            200,
+            50.0,
+            0.0,
+            400.0,
+            0.02,
+        ),
+        (
+            "voltage",
+            "Напряжение",
+            "V",
+            WaveType::Noise,
+            300,
+            20.0,
+            0.0,
+            250.0,
+            0.0,
+        ),
+        (
+            "power",
+            "Мощность",
+            "kW",
+            WaveType::Sine,
+            1000,
+            100.0,
+            0.0,
+            500.0,
+            0.03,
+        ),
+        (
+            "freq",
+            "Частота сети",
+            "Hz",
+            WaveType::Constant,
+            1000,
+            0.5,
+            50.0,
+            60.0,
+            0.0,
+        ),
         ("ph", "pH", "", WaveType::Noise, 2000, 2.0, 7.0, 14.0, 0.0),
-        ("conduct", "Проводимость", "µS/cm", WaveType::Sine, 1500, 500.0, 0.0, 2000.0, 0.01),
-        ("turbid", "Мутность", "NTU", WaveType::Random, 2000, 50.0, 0.0, 200.0, 0.0),
-        ("oxy", "Кислород", "mg/l", WaveType::Sine, 1000, 4.0, 8.0, 15.0, 0.05),
-        ("co2", "CO₂", "ppm", WaveType::Sawtooth, 3000, 200.0, 400.0, 1000.0, 0.01),
-        ("humidity", "Влажность", "%", WaveType::Sine, 2000, 30.0, 50.0, 100.0, 0.02),
-        ("pressure2", "Давл. ресивера", "bar", WaveType::Noise, 600, 2.0, 8.0, 12.0, 0.0),
-        ("temp2", "Темп. теплоносителя", "°C", WaveType::Sine, 1500, 15.0, 60.0, 120.0, 0.03),
-        ("valve", "Положение клапана", "%", WaveType::Square, 3000, 50.0, 0.0, 100.0, 0.01),
-        ("weight", "Вес", "kg", WaveType::Noise, 1000, 500.0, 0.0, 5000.0, 0.0),
+        (
+            "conduct",
+            "Проводимость",
+            "µS/cm",
+            WaveType::Sine,
+            1500,
+            500.0,
+            0.0,
+            2000.0,
+            0.01,
+        ),
+        (
+            "turbid",
+            "Мутность",
+            "NTU",
+            WaveType::Random,
+            2000,
+            50.0,
+            0.0,
+            200.0,
+            0.0,
+        ),
+        (
+            "oxy",
+            "Кислород",
+            "mg/l",
+            WaveType::Sine,
+            1000,
+            4.0,
+            8.0,
+            15.0,
+            0.05,
+        ),
+        (
+            "co2",
+            "CO₂",
+            "ppm",
+            WaveType::Sawtooth,
+            3000,
+            200.0,
+            400.0,
+            1000.0,
+            0.01,
+        ),
+        (
+            "humidity",
+            "Влажность",
+            "%",
+            WaveType::Sine,
+            2000,
+            30.0,
+            50.0,
+            100.0,
+            0.02,
+        ),
+        (
+            "pressure2",
+            "Давл. ресивера",
+            "bar",
+            WaveType::Noise,
+            600,
+            2.0,
+            8.0,
+            12.0,
+            0.0,
+        ),
+        (
+            "temp2",
+            "Темп. теплоносителя",
+            "°C",
+            WaveType::Sine,
+            1500,
+            15.0,
+            60.0,
+            120.0,
+            0.03,
+        ),
+        (
+            "valve",
+            "Положение клапана",
+            "%",
+            WaveType::Square,
+            3000,
+            50.0,
+            0.0,
+            100.0,
+            0.01,
+        ),
+        (
+            "weight",
+            "Вес",
+            "kg",
+            WaveType::Noise,
+            1000,
+            500.0,
+            0.0,
+            5000.0,
+            0.0,
+        ),
     ];
     let mut next_id = 10;
     for scenario in scenarios.iter() {
         let (prefix, name, unit, ref wtype, interval, amp, off, mx, freq) = *scenario;
-        for inst in 1..=2 { // 2 экземпляра каждого типа
+        for inst in 1..=2 {
+            // 2 экземпляра каждого типа
             let id = format!("{}-{:02}", prefix, inst);
             let n = format!("{} #{}", name, inst);
             let base_quality = (70 + (inst * 15)).min(100);
             default_generators.push(GeneratorConfig {
-                id, name: n, enabled: true,
+                id,
+                name: n,
+                enabled: true,
                 topic: format!("USEPI/{}-{:02}", prefix, inst),
                 wave_type: wtype.clone(),
-                interval_ms: interval, amplitude: amp, offset: off, frequency: freq,
-                unit: unit.to_string(), quality: base_quality as u8,
-                min: off - amp * 1.5_f64, max: mx.max(off + amp * 1.5_f64),
-                drift: 0.0, spike_prob: 0.005, spike_amp: 3.0,
-                noise_amp: 0.05, deadband: amp * 0.01, hysteresis: amp * 0.005,
-                stuck_prob: 0.001, stuck_duration_ms: 2000,
-                jitter: 10.0, trend: 0.0, drop_prob: 0.003, degradation_rate: 0.0,
-                modbus_addr: next_id, modbus_fn: 3, modbus_type: 0, modbus_scale: 1.0, modbus_slave: 1,
+                interval_ms: interval,
+                amplitude: amp,
+                offset: off,
+                frequency: freq,
+                unit: unit.to_string(),
+                quality: base_quality as u8,
+                min: off - amp * 1.5_f64,
+                max: mx.max(off + amp * 1.5_f64),
+                drift: 0.0,
+                spike_prob: 0.005,
+                spike_amp: 3.0,
+                noise_amp: 0.05,
+                deadband: amp * 0.01,
+                hysteresis: amp * 0.005,
+                stuck_prob: 0.001,
+                stuck_duration_ms: 2000,
+                jitter: 10.0,
+                trend: 0.0,
+                drop_prob: 0.003,
+                degradation_rate: 0.0,
+                modbus_addr: next_id,
+                modbus_fn: 3,
+                modbus_type: 0,
+                modbus_scale: 1.0,
+                modbus_slave: 1,
             });
             next_id += 1;
         }
@@ -316,8 +526,11 @@ async fn main() -> std::io::Result<()> {
             interval.tick().await;
             let gens = diag_generators.lock().await;
             let total = gens.len();
-            let rate: f64 = gens.iter().filter(|g| g.enabled)
-                .map(|g| 1000.0 / g.interval_ms.max(1) as f64).sum();
+            let rate: f64 = gens
+                .iter()
+                .filter(|g| g.enabled)
+                .map(|g| 1000.0 / g.interval_ms.max(1) as f64)
+                .sum();
             let diag = diagnostics::build_diagnostics(
                 env!("CARGO_PKG_VERSION"),
                 diag_started.elapsed().as_secs(),
@@ -369,11 +582,20 @@ async fn index_with_panels(state: web::Data<api::AppState>) -> actix_web::HttpRe
     drop(gens);
     let html = match tokio::fs::read_to_string("static/index.html").await {
         Ok(h) => h,
-        Err(_) => return actix_web::HttpResponse::InternalServerError().body("index.html not found"),
+        Err(_) => {
+            return actix_web::HttpResponse::InternalServerError().body("index.html not found")
+        }
     };
-    let html = html.replace("<!-- PANELS_PLACEHOLDER -->",
-        &format!("<div class=\"panels-grid\" id=\"panelsGrid\">{}</div>", panels_html));
-    actix_web::HttpResponse::Ok().content_type("text/html; charset=utf-8").body(html)
+    let html = html.replace(
+        "<!-- PANELS_PLACEHOLDER -->",
+        &format!(
+            "<div class=\"panels-grid\" id=\"panelsGrid\">{}</div>",
+            panels_html
+        ),
+    );
+    actix_web::HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .body(html)
 }
 
 async fn run_generators(
@@ -389,7 +611,10 @@ async fn run_generators(
         loop {
             match rx.try_recv() {
                 Ok(msg) => {
-                    if let Some(id) = msg.strip_prefix("update:").or_else(|| msg.strip_prefix("remove:")) {
+                    if let Some(id) = msg
+                        .strip_prefix("update:")
+                        .or_else(|| msg.strip_prefix("remove:"))
+                    {
                         // Убиваем старый handle генератора — он пересоздастся в следующем цикле
                         if let Some(pos) = handles.iter().position(|(hid, _)| hid == id) {
                             let (_, handle) = handles.remove(pos);
@@ -405,7 +630,11 @@ async fn run_generators(
             }
         }
         let gens = generators.lock().await;
-        let active_ids: Vec<String> = gens.iter().filter(|g| g.enabled).map(|g| g.id.clone()).collect();
+        let active_ids: Vec<String> = gens
+            .iter()
+            .filter(|g| g.enabled)
+            .map(|g| g.id.clone())
+            .collect();
 
         for gen in gens.iter().filter(|g| g.enabled) {
             let exists = handles.iter().any(|(hid, handle)| {
@@ -413,8 +642,12 @@ async fn run_generators(
                     if handle.is_finished() {
                         info!("Generator {} task died, restarting...", hid);
                         false // remove dead handle
-                    } else { true }
-                } else { false }
+                    } else {
+                        true
+                    }
+                } else {
+                    false
+                }
             });
             if !exists {
                 let gen_id = gen.id.clone();
@@ -497,8 +730,20 @@ async fn run_single_generator(
             };
 
             let signal = if cfg.modbus_addr > 0 {
-                models::build_modbus_signal(&id, &cfg.name, val, &cfg.unit, cfg.min, cfg.max, quality,
-                    cfg.modbus_addr, cfg.modbus_fn, cfg.modbus_type, cfg.modbus_scale, cfg.modbus_slave)
+                models::build_modbus_signal(
+                    &id,
+                    &cfg.name,
+                    val,
+                    &cfg.unit,
+                    cfg.min,
+                    cfg.max,
+                    quality,
+                    cfg.modbus_addr,
+                    cfg.modbus_fn,
+                    cfg.modbus_type,
+                    cfg.modbus_scale,
+                    cfg.modbus_slave,
+                )
             } else {
                 models::build_signal(&id, &cfg.name, val, &cfg.unit, cfg.min, cfg.max, quality)
             };
@@ -507,7 +752,8 @@ async fn run_single_generator(
             {
                 let mut sigs = current_signals.lock().await;
                 if let Some(existing) = sigs.iter_mut().find(|p| {
-                    p.iter().any(|e| e.id == format!("sensor/{}", id) || e.id == id)
+                    p.iter()
+                        .any(|e| e.id == format!("sensor/{}", id) || e.id == id)
                 }) {
                     *existing = signal.clone();
                 } else {

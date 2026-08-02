@@ -1,7 +1,7 @@
-use actix_web::{web, HttpResponse, Responder};
 use crate::config::{GeneratorConfig, MqttConfig};
 use crate::models::FlatEntry;
 use crate::mqtt_client::MqttHandle;
+use actix_web::{web, HttpResponse, Responder};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Mutex;
@@ -112,7 +112,9 @@ pub async fn toggle_generator(
             g.enabled = !g.enabled;
             new_enabled = Some(g.enabled);
             let _ = state.tx_shutdown.send(format!(
-                "{}:{}", if g.enabled { "resume" } else { "pause" }, id
+                "{}:{}",
+                if g.enabled { "resume" } else { "pause" },
+                id
             ));
         }
     } // lock released before save_config (avoids deadlock)
@@ -132,9 +134,10 @@ pub async fn get_current_signal(
     let id = path.into_inner();
     let full_id = format!("sensor/{}", id);
     let signals = state.current_signals.lock().await;
-    if let Some(payload) = signals.iter().find(|p| {
-        p.iter().any(|e| e.id == full_id || e.id == id)
-    }) {
+    if let Some(payload) = signals
+        .iter()
+        .find(|p| p.iter().any(|e| e.id == full_id || e.id == id))
+    {
         HttpResponse::Ok().json(payload)
     } else {
         HttpResponse::NotFound().json(serde_json::json!({"error": "No signal yet"}))
@@ -149,8 +152,11 @@ pub async fn health(state: web::Data<AppState>) -> impl Responder {
     let uptime = state.started_at.elapsed().as_secs();
     let gen_count = gens.len();
     let active_count = gens.iter().filter(|g| g.enabled).count();
-    let signal_rate: f64 = gens.iter().filter(|g| g.enabled)
-        .map(|g| 1000.0 / g.interval_ms.max(1) as f64).sum();
+    let signal_rate: f64 = gens
+        .iter()
+        .filter(|g| g.enabled)
+        .map(|g| 1000.0 / g.interval_ms.max(1) as f64)
+        .sum();
 
     HttpResponse::Ok().json(serde_json::json!({
         "status": "ok",
@@ -253,7 +259,10 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             .route("/generators/{id}", web::put().to(update_generator))
             .route("/generators/{id}", web::delete().to(delete_generator))
             .route("/generators/{id}/toggle", web::put().to(toggle_generator))
-            .route("/generators/{id}/current", web::get().to(get_current_signal))
+            .route(
+                "/generators/{id}/current",
+                web::get().to(get_current_signal),
+            )
             .route("/broker", web::get().to(broker_status))
             .route("/broker/history", web::get().to(broker_history))
             .route("/mqtt/config", web::get().to(get_mqtt_config))

@@ -64,6 +64,53 @@ impl MqttConfig {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_topic_for_default() {
+        let cfg = MqttConfig::default();
+        assert_eq!(cfg.topic_for("temp-01"), "USEPI/temp-01");
+    }
+
+    #[test]
+    fn test_topic_for_custom_prefix() {
+        let cfg = MqttConfig {
+            topic_prefix: "PLANT-A".into(),
+            ..MqttConfig::default()
+        };
+        assert_eq!(cfg.topic_for("valve-02"), "PLANT-A/valve-02");
+    }
+
+    #[test]
+    fn test_topic_for_trailing_slash() {
+        let cfg = MqttConfig {
+            topic_prefix: "PLANT-A/".into(),
+            ..MqttConfig::default()
+        };
+        assert_eq!(cfg.topic_for("valve-02"), "PLANT-A/valve-02");
+    }
+
+    #[test]
+    fn test_topic_for_empty_prefix() {
+        let cfg = MqttConfig {
+            topic_prefix: String::new(),
+            ..MqttConfig::default()
+        };
+        assert_eq!(cfg.topic_for("temp-01"), "/temp-01");
+    }
+
+    #[test]
+    fn test_default_config() {
+        let cfg = MqttConfig::default();
+        assert_eq!(cfg.host, "79.174.94.236");
+        assert_eq!(cfg.port, 1883);
+        assert_eq!(cfg.diagnostics_topic, "USEPI/diagnostics");
+        assert!(cfg.username.is_empty());
+    }
+}
+
 impl std::fmt::Display for WaveType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -98,7 +145,6 @@ pub struct GeneratorConfig {
     pub max: f64,
 
     // === Реалистичные эффекты ===
-
     /// Дрейф (ед/сек) — медленное смещение сигнала
     pub drift: f64,
 
@@ -143,7 +189,6 @@ pub struct GeneratorConfig {
     pub degradation_rate: f64,
 
     // === Modbus параметры ===
-
     /// Modbus адрес регистра
     #[serde(rename = "modbusAddr", default)]
     pub modbus_addr: u16,
