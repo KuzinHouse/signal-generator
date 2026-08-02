@@ -15,6 +15,55 @@ fn default_topic() -> String {
     String::new()
 }
 
+/// Конфигурация MQTT брокера — сохраняется в config/mqtt.json
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MqttConfig {
+    /// Адрес брокера (host или IP)
+    pub host: String,
+    /// Порт брокера
+    pub port: u16,
+    /// Имя пользователя (пусто = без auth)
+    #[serde(default)]
+    pub username: String,
+    /// Пароль (пусто = без auth)
+    #[serde(default)]
+    pub password: String,
+    /// Префикс топиков публикации: {prefix}/{id} (пусто = без префикса)
+    #[serde(default = "default_topic")]
+    pub topic_prefix: String,
+    /// Топик диагностики
+    #[serde(default = "default_diag_topic")]
+    pub diagnostics_topic: String,
+}
+
+fn default_diag_topic() -> String {
+    "USEPI/diagnostics".to_string()
+}
+
+impl Default for MqttConfig {
+    fn default() -> Self {
+        Self {
+            host: "79.174.94.236".to_string(),
+            port: 1883,
+            username: String::new(),
+            password: String::new(),
+            topic_prefix: "USEPI".to_string(),
+            diagnostics_topic: "USEPI/diagnostics".to_string(),
+        }
+    }
+}
+
+impl MqttConfig {
+    /// Полный топик для генератора: {prefix}/{id} или /{id}, если префикс пуст
+    pub fn topic_for(&self, id: &str) -> String {
+        if self.topic_prefix.is_empty() {
+            format!("/{}", id)
+        } else {
+            format!("{}/{}", self.topic_prefix.trim_end_matches('/'), id)
+        }
+    }
+}
+
 impl std::fmt::Display for WaveType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

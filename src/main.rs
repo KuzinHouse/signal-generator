@@ -22,8 +22,13 @@ use std::time::Instant;
 async fn main() -> std::io::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
-    let mqtt_host = "79.174.94.236";
-    let mqtt_port = 1883;
+    // MQTT конфиг: из файла или дефолт
+    let mqtt_config = persistence::load_mqtt().await.unwrap_or_else(|| {
+        log::info!("No saved MQTT config, using defaults");
+        config::MqttConfig::default()
+    });
+    let mqtt_host = mqtt_config.host.clone();
+    let mqtt_port = mqtt_config.port;
 
     // Демо-генераторы с реалистичными настройками
     let mut default_generators = vec![
@@ -282,8 +287,9 @@ async fn main() -> std::io::Result<()> {
         log::info!("Loaded {} generators from file", initial_generators.len());
     }
 
-    let mqtt = mqtt_client::MqttHandle::connect(mqtt_host, mqtt_port, "signal-generator").await;
+    let mqtt = mqtt_client::MqttHandle::connect(&mqtt_config, "signal-generator").await;
     let mqtt_arc = Arc::new(mqtt);
+    let mqtt_config_arc = Arc::new(Mutex::new(mqtt_config));
 
     let generators = Arc::new(Mutex::new(initial_generators));
     let current_signals: Arc<Mutex<Vec<Vec<models::FlatEntry>>>> = Arc::new(Mutex::new(Vec::new()));
@@ -302,6 +308,7 @@ async fn main() -> std::io::Result<()> {
     // Публикация диагностики в MQTT каждые 10 секунд
     let diag_generators = generators.clone();
     let diag_mqtt = mqtt_arc.clone();
+    let diag_mqtt_cfg = mqtt_config_arc.clone();
     let diag_started = started_at;
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(10));
@@ -319,8 +326,9 @@ async fn main() -> std::io::Result<()> {
                 rate,
                 total,
             );
-            let _ = diag_mqtt.publish("USEPI/diagnostics", &diag).await;
             drop(gens);
+            let topic = diag_mqtt_cfg.lock().await.diagnostics_topic.clone();
+            let _ = diag_mqtt.publish(&topic, &diag).await;
         }
     });
 
@@ -329,6 +337,7 @@ async fn main() -> std::io::Result<()> {
         current_signals: current_signals.clone(),
         tx_shutdown: tx_shutdown.clone(),
         mqtt_handle: mqtt_arc.clone(),
+        mqtt_config: mqtt_config_arc.clone(),
         started_at: Instant::now(),
     });
 

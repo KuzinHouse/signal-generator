@@ -167,6 +167,35 @@ function confirmYes(){
 function confirmNo(){window._delId=null;document.getElementById('confirmOverlay').classList.remove('open')}
 async function togGen(id){await api('/generators/'+id+'/toggle',{method:'PUT'});loadAll()}
 
+/* ========== настройки MQTT ========== */
+async function openMqttSettings(){
+  const cfg=await api('/mqtt/config');
+  if(!cfg)return;
+  document.getElementById('mqHost').value=cfg.host||'';
+  document.getElementById('mqPort').value=cfg.port||1883;
+  document.getElementById('mqUser').value=cfg.username||'';
+  document.getElementById('mqPass').value=cfg.password&&cfg.password!=='••••••'?cfg.password:'';
+  document.getElementById('mqPrefix').value=cfg.topic_prefix||'USEPI';
+  document.getElementById('mqDiag').value=cfg.diagnostics_topic||'USEPI/diagnostics';
+  document.getElementById('mqttOverlay').classList.add('open');
+}
+function closeMqtt(){document.getElementById('mqttOverlay').classList.remove('open')}
+async function saveMqttSettings(e){
+  e.preventDefault();
+  const body={
+    host:document.getElementById('mqHost').value.trim(),
+    port:+document.getElementById('mqPort').value||1883,
+    username:document.getElementById('mqUser').value.trim(),
+    password:document.getElementById('mqPass').value,
+    topic_prefix:document.getElementById('mqPrefix').value.trim()||'USEPI',
+    diagnostics_topic:document.getElementById('mqDiag').value.trim()||'USEPI/diagnostics',
+  };
+  const req=api('/mqtt/config',{method:'PUT',body:JSON.stringify(body)});
+  closeMqtt();
+  const r=await req;
+  if(r)loadAll();
+}
+
 /* ========== live chart (canvas, без Chart.js) ========== */
 const COLORS=['#00f0ff','#34d399','#fbbf24','#a855f7','#ef4444','#3b82f6','#ffffff','#f472b6'];
 function initLiveChart(){
@@ -274,7 +303,7 @@ document.addEventListener('click',e=>{
   while(el&&el!==document.body&&el!==document.documentElement){
     if(el.hasAttribute&&el.hasAttribute('data-stop'))return; // внутри модалки/действий — не всплываем
     const a=el.dataset&&el.dataset.action;
-    if(a){a==='open-modal'?openModal():a==='close-modal'?closeModal():a==='confirm-yes'?confirmYes():a==='confirm-no'?confirmNo():0;return}
+    if(a){a==='open-modal'?openModal():a==='close-modal'?closeModal():a==='confirm-yes'?confirmYes():a==='confirm-no'?confirmNo():a==='open-mqtt'?openMqttSettings():a==='close-mqtt'?closeMqtt():0;return}
     if(el.hasAttribute&&el.hasAttribute('data-chart')){toggleChart(el.dataset.chart);return}
     if(el.hasAttribute&&el.hasAttribute('data-del')){delGen(el.dataset.del);return}
     if(el.hasAttribute&&el.hasAttribute('data-edit')){editGen(el.dataset.edit);return}
@@ -286,6 +315,7 @@ document.addEventListener('change',e=>{
   if(tg&&e.target.matches('input[type=checkbox]')){togGen(tg.dataset.toggle)}
 });
 document.getElementById('generatorForm').addEventListener('submit',saveGenerator);
+document.getElementById('mqttForm').addEventListener('submit',saveMqttSettings);
 
 /* ========== init ========== */
 initLiveChart();initBrokerChart();

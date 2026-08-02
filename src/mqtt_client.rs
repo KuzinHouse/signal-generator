@@ -156,10 +156,13 @@ impl BrokerHistory {
 }
 
 impl MqttHandle {
-    pub async fn connect(host: &str, port: u16, client_id: &str) -> Self {
-        let mut mqttopts = MqttOptions::new(client_id, host, port);
+    pub async fn connect(cfg: &crate::config::MqttConfig, client_id: &str) -> Self {
+        let mut mqttopts = MqttOptions::new(client_id, &cfg.host, cfg.port);
         mqttopts.set_keep_alive(Duration::from_secs(30));
         mqttopts.set_clean_session(true);
+        if !cfg.username.is_empty() {
+            mqttopts.set_credentials(&cfg.username, &cfg.password);
+        }
 
         let (client, mut eventloop) = AsyncClient::new(mqttopts, 100);
         let client = Arc::new(Mutex::new(client));
@@ -234,5 +237,69 @@ impl MqttHandle {
 
     pub fn is_connected(&self) -> bool {
         self.connected.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Пересоздать MQTT клиент с новыми настройками (для hot-reload конфига)
+    pub async fn reconnect(&self, cfg: &crate::config::MqttConfig) {
+        let cfg = cfg.clone();
+        let mut mqttopts = MqttOptions::new("signal-generator", &cfg.host, cfg.port);
+        mqttopts.set_keep_alive(Duration::from_secs(30));
+        mqttopts.set_clean_session(true);
+        if !cfg.username.is_empty() {
+            mqttopts.set_credentials(&cfg.username, &cfg.password);
+        }
+
+        let (client, mut eventloop) = AsyncClient::new(mqttopts, 100);
+        // Заменяем клиент
+        {
+            let mut c = self.client.lock().await;
+            *c = client;
+            if let Err(e) = c.subscribe("$SYS/#", QoS::AtMostOnce).await {
+                warn!("Failed to resubscribe $SYS/#: {:?}", e);
+            }
+        }
+        self.connected.store(false, std::sync::atomic::Ordering::SeqCst);
+
+        let connected_clone = self.connected.clone();
+        let bs_clone = self.broker_status.clone();
+        let bh_clone = self.broker_history.clone();
+        // сброс истории при смене брокера
+        {
+            let mut bh = bh_clone.lock().await;
+            *bh = BrokerHistory::new(120);
+        }
+
+        tokio::spawn(async move {
+            let mut last_record = Instant::now();
+            loop {
+                match eventloop.poll().await {
+                    Ok(Event::Incoming(Packet::ConnAck(_))) => {
+                        connected_clone.store(true, std::sync::atomic::Ordering::SeqCst);
+                        info!("MQTT reconnected to broker {}:{}", cfg.host, cfg.port);
+                    }
+                    Ok(Event::Incoming(Packet::Publish(pub_))) => {
+                        let topic = pub_.topic.clone();
+                        if topic.starts_with("$SYS/") {
+                            let payload = String::from_utf8_lossy(&pub_.payload).to_string();
+                            let mut bs = bs_clone.lock().await;
+                            bs.parse_sys(&topic, &payload);
+                        }
+                    }
+                    Ok(Event::Incoming(_)) => {}
+                    Ok(Event::Outgoing(_)) => {}
+                    Err(e) => {
+                        connected_clone.store(false, std::sync::atomic::Ordering::SeqCst);
+                        warn!("MQTT reconnect error: {:?}", e);
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                    }
+                }
+                if last_record.elapsed() >= Duration::from_secs(5) {
+                    let bs = bs_clone.lock().await;
+                    let mut bh = bh_clone.lock().await;
+                    bh.record(&bs);
+                    last_record = Instant::now();
+                }
+            }
+        });
     }
 }

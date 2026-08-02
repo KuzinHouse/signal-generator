@@ -1,5 +1,5 @@
 use actix_web::{web, HttpResponse, Responder};
-use crate::config::GeneratorConfig;
+use crate::config::{GeneratorConfig, MqttConfig};
 use crate::models::FlatEntry;
 use crate::mqtt_client::MqttHandle;
 use std::sync::Arc;
@@ -12,6 +12,7 @@ pub struct AppState {
     pub current_signals: Arc<Mutex<Vec<Vec<FlatEntry>>>>,
     pub mqtt_handle: Arc<MqttHandle>,
     pub tx_shutdown: tokio::sync::broadcast::Sender<String>,
+    pub mqtt_config: Arc<Mutex<MqttConfig>>,
     #[allow(dead_code)]
     pub started_at: Instant,
 }
@@ -37,7 +38,7 @@ pub async fn create_generator(
     if config.id.is_empty() {
         config.id = uuid::Uuid::new_v4().to_string();
     }
-    config.topic = format!("USEPI/{}", config.id);
+    config.topic = state.mqtt_config.lock().await.topic_for(&config.id);
     {
         let mut gens = state.generators.lock().await;
         let _ = state.tx_shutdown.send(format!("new:{}", config.id));
@@ -60,7 +61,7 @@ pub async fn update_generator(
         if let Some(idx) = gens.iter().position(|g| g.id == id) {
             let mut config = body.into_inner();
             config.id = id.clone();
-            config.topic = format!("USEPI/{}", id);
+            config.topic = state.mqtt_config.lock().await.topic_for(&id);
             gens[idx] = config.clone();
             let _ = state.tx_shutdown.send(format!("update:{}", id));
             updated = Some(config);
@@ -175,6 +176,60 @@ pub async fn broker_history(state: web::Data<AppState>) -> impl Responder {
     HttpResponse::Ok().json(h)
 }
 
+/// GET /api/mqtt/config — текущие настройки брокера (пароль маскируем)
+pub async fn get_mqtt_config(state: web::Data<AppState>) -> impl Responder {
+    let cfg = state.mqtt_config.lock().await;
+    let mut out = cfg.clone();
+    if !out.password.is_empty() {
+        out.password = "••••••".to_string();
+    }
+    HttpResponse::Ok().json(out)
+}
+
+/// PUT /api/mqtt/config — сохранить настройки брокера (перезапуск MQTT)
+pub async fn update_mqtt_config(
+    state: web::Data<AppState>,
+    body: web::Json<MqttConfig>,
+) -> impl Responder {
+    let mut cfg = body.into_inner();
+    if cfg.host.trim().is_empty() {
+        return HttpResponse::BadRequest().json(serde_json::json!({"error": "host required"}));
+    }
+    if cfg.port == 0 {
+        cfg.port = 1883;
+    }
+    if cfg.topic_prefix.trim().is_empty() {
+        cfg.topic_prefix = "USEPI".to_string();
+    }
+    if cfg.diagnostics_topic.trim().is_empty() {
+        cfg.diagnostics_topic = "USEPI/diagnostics".to_string();
+    }
+    cfg.topic_prefix = cfg.topic_prefix.trim().to_string();
+    cfg.diagnostics_topic = cfg.diagnostics_topic.trim().to_string();
+
+    // Обновляем конфиг в state
+    {
+        let mut cur = state.mqtt_config.lock().await;
+        // Если пароль пришёл маской — сохраняем старый
+        if cfg.password == "••••••" {
+            cfg.password = cur.password.clone();
+        }
+        *cur = cfg.clone();
+    } // lock released before save (avoids deadlock)
+    crate::persistence::save_mqtt(&cfg).await;
+
+    // Переподключение MQTT с новыми настройками
+    let new_cfg = cfg.clone();
+    let mqtt = state.mqtt_handle.clone();
+    tokio::spawn(async move {
+        // даём текущим публикациям завершиться, затем пересоздаём клиент
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        mqtt.reconnect(&new_cfg).await;
+    });
+
+    HttpResponse::Ok().json(cfg)
+}
+
 pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("/api")
@@ -186,6 +241,8 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             .route("/generators/{id}/current", web::get().to(get_current_signal))
             .route("/broker", web::get().to(broker_status))
             .route("/broker/history", web::get().to(broker_history))
+            .route("/mqtt/config", web::get().to(get_mqtt_config))
+            .route("/mqtt/config", web::put().to(update_mqtt_config))
             .route("/health", web::get().to(health)),
     );
 }

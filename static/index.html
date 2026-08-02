@@ -139,6 +139,7 @@ body{background:radial-gradient(circle at 50%30%,#1a1a1a 0%,#000 70%);color:var(
 <div class="broker-cell">СООБЩ/С: <strong id="brokerMsgRate">0</strong> · БАЙТ/С: <strong id="brokerByteRate">0</strong></div>
 <div class="broker-cell">ПАМЯТЬ: <strong id="brokerHeap">0</strong> <small id="brokerHeapPct" style="color:var(--t3)"></small></div>
 <div class="broker-cell">RETAINED: <strong id="brokerRetained">0</strong> · STORE: <strong id="brokerStore">0</strong></div>
+<div class="broker-cell"><button class="btn-fut" data-action="open-mqtt" style="padding:2px 8px;font-size:7px">⚙ НАСТРОЙКИ</button></div>
 </div>
 
 <!-- Broker Mini-Chart -->
@@ -249,6 +250,29 @@ body{background:radial-gradient(circle at 50%30%,#1a1a1a 0%,#000 70%);color:var(
 <div class="modal-header"><h2>УДАЛИТЬ ГЕНЕРАТОР</h2><button class="btn-close" data-action="confirm-no">&times;</button></div>
 <div class="modal-body" style="padding:clamp(14px,2vw,20px);font-size:clamp(12px,1.2vw,15px);color:var(--t2)">Удалить генератор <strong id="confirmName" style="color:var(--t1)"></strong>?</div>
 <div class="modal-footer"><button type="button" class="btn-fut danger" data-action="confirm-no">ОТМЕНА</button><button type="button" class="btn-fut primary" data-action="confirm-yes">УДАЛИТЬ</button></div>
+</div></div>
+
+<!-- MQTT Settings Modal -->
+<div class="modal-overlay" id="mqttOverlay" data-action="close-mqtt">
+<div class="modal" data-stop="1">
+<div class="modal-header"><h2>НАСТРОЙКИ MQTT БРОКЕРА</h2><button class="btn-close" data-action="close-mqtt">&times;</button></div>
+<form id="mqttForm">
+<div class="form-grid">
+<div class="section-label">БРОКЕР</div>
+<div class="form-group"><label>Хост</label><input type="text" id="mqHost" placeholder="192.168.1.10"></div>
+<div class="form-group"><label>Порт</label><input type="number" id="mqPort" value="1883" min="1" max="65535"></div>
+<div class="form-group"><label>Пользователь</label><input type="text" id="mqUser" placeholder="опционально"></div>
+<div class="form-group"><label>Пароль</label><input type="password" id="mqPass" placeholder="опционально"></div>
+<div class="section-label">ТОПИКИ</div>
+<div class="form-group"><label>Префикс топиков</label><input type="text" id="mqPrefix" placeholder="USEPI" value="USEPI"></div>
+<div class="form-group"><label>Топик диагностики</label><input type="text" id="mqDiag" placeholder="USEPI/diagnostics" value="USEPI/diagnostics"></div>
+<div class="form-group full" style="color:var(--t3);font-family:JetBrains Mono,monospace;font-size:clamp(7px,0.7vw,9px)">Формат: {префикс}/{id} — генераторы будут публиковаться в этот шаблон. Сохраняется в config/mqtt.json и переживает перезагрузку.</div>
+</div>
+<div class="modal-footer">
+<button type="button" class="btn-fut danger" data-action="close-mqtt">ОТМЕНА</button>
+<button type="submit" class="btn-fut primary" id="mqttSaveBtn">СОХРАНИТЬ</button>
+</div>
+</form>
 </div></div>
 
 <script src="/app.js"></script>
