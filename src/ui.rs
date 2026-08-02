@@ -19,8 +19,9 @@ pub fn render_panels_html(generators: &[GeneratorConfig], signals: &[Vec<FlatEnt
         let (val_str, lat_str) = signal_value(g, signals);
         let cls = panel_class(g, signals);
         format!(
-            "<div class=\"panel {}\" id=\"pn-{}\"><div class=\"panel-header\"><span>{}</span><span>{}</span></div><div class=\"panel-value gradient-text {}\" id=\"pv-{}\">{}<small> {}</small></div><div class=\"panel-footer\">{} {}ms{} · <span id=\"lt-{}\">{}</span></div><div class=\"wave-icon\">{}</div><div class=\"panel-actions\" onclick=\"event.stopPropagation()\"><label class=\"toggle\"><input type=\"checkbox\"{} onchange=\"togGen('{}')\"><span class=\"toggle-slider\"></span></label><button class=\"pn-action\" onclick=\"delGen('{}')\">✕</button></div></div>",
+            "<div class=\"panel {}\" id=\"pn-{}\" data-edit=\"{}\"><div class=\"panel-header\"><span>{}</span><span>{}</span></div><div class=\"panel-value gradient-text {}\" id=\"pv-{}\">{}<small> {}</small></div><div class=\"panel-footer\">{} {}ms{} · <span id=\"lt-{}\">{}</span></div><div class=\"wave-icon\">{}</div><div class=\"panel-actions\" data-stop=\"1\"><label class=\"toggle\"><input type=\"checkbox\"{} data-toggle=\"{}\"><span class=\"toggle-slider\"></span></label><button class=\"pn-action\" data-del=\"{}\">✕</button></div></div>",
             if g.enabled { "" } else { "disabled" },
+            g.id,
             g.id,
             html_escape(&g.name),
             html_escape(&g.id),
