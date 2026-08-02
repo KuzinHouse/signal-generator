@@ -247,7 +247,32 @@ function upChartUI(){
 }
 function toggleChart(id){
   const i=chartSel.indexOf(id);
-  if(i>-1)chartSel.splice(i,1);else chartSel.push(id);
+  if(i>-1)chartSel.splice(i,1);
+  else{
+    chartSel.push(id);
+    // подгрузить серверную историю (если есть) — осциллограф сразу показывает прошлые данные
+    api('/generators/'+id+'/history?limit=120').then(h=>{
+      if(!h||!Array.isArray(h.points)||!h.points.length)return;
+      if(!liveChart.buffer)liveChart.buffer={};
+      if(!liveChart.buffer[id])liveChart.buffer[id]=[];
+      const now=Date.now();
+      const pts=[];
+      for(const p of h.points){
+        if(typeof p.t==='number'&&typeof p.v==='number'){
+          pts.push({t:p.t,v:p.v});
+        }
+      }
+      if(!pts.length)return;
+      // сдвиг: последняя точка истории становится "сейчас", чтобы влезть в окно 30с
+      const shift=now-pts[pts.length-1].t;
+      for(const p of pts){
+        liveChart.buffer[id].push({x:p.t+shift,y:p.v});
+      }
+      // оставляем последние 60 точек (30с при 0.5s тике)
+      if(liveChart.buffer[id].length>60)liveChart.buffer[id]=liveChart.buffer[id].slice(-60);
+      drawLiveChart();
+    });
+  }
   upChartUI();
 }
 function upChart(){

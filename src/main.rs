@@ -504,16 +504,27 @@ async fn main() -> std::io::Result<()> {
 
     let generators = Arc::new(Mutex::new(initial_generators));
     let current_signals: Arc<Mutex<Vec<Vec<models::FlatEntry>>>> = Arc::new(Mutex::new(Vec::new()));
+    let signal_history: Arc<
+        Mutex<std::collections::HashMap<String, std::collections::VecDeque<(i64, f64)>>>,
+    > = Arc::new(Mutex::new(std::collections::HashMap::new()));
     let (tx_shutdown, rx_shutdown) = tokio::sync::broadcast::channel::<String>(100);
     let started_at = Instant::now();
 
     let gen_generators = generators.clone();
     let gen_signals = current_signals.clone();
+    let gen_history = signal_history.clone();
     let gen_mqtt = mqtt_arc.clone();
     let mut gen_rx = rx_shutdown;
 
     tokio::spawn(async move {
-        run_generators(gen_generators, gen_signals, gen_mqtt, &mut gen_rx).await;
+        run_generators(
+            gen_generators,
+            gen_signals,
+            gen_history,
+            gen_mqtt,
+            &mut gen_rx,
+        )
+        .await;
     });
 
     // Публикация диагностики в MQTT каждые 10 секунд
@@ -559,6 +570,7 @@ async fn main() -> std::io::Result<()> {
     let state = web::Data::new(AppState {
         generators: generators.clone(),
         current_signals: current_signals.clone(),
+        signal_history: signal_history.clone(),
         tx_shutdown: tx_shutdown.clone(),
         mqtt_handle: mqtt_arc.clone(),
         mqtt_config: mqtt_config_arc.clone(),
@@ -614,6 +626,9 @@ async fn index_with_panels(state: web::Data<api::AppState>) -> actix_web::HttpRe
 async fn run_generators(
     generators: Arc<Mutex<Vec<GeneratorConfig>>>,
     current_signals: Arc<Mutex<Vec<Vec<models::FlatEntry>>>>,
+    signal_history: Arc<
+        Mutex<std::collections::HashMap<String, std::collections::VecDeque<(i64, f64)>>>,
+    >,
     mqtt: Arc<mqtt_client::MqttHandle>,
     rx: &mut tokio::sync::broadcast::Receiver<String>,
 ) {
@@ -666,9 +681,10 @@ async fn run_generators(
                 let gen_id = gen.id.clone();
                 let gen_cfg = gen.clone();
                 let signals = current_signals.clone();
+                let history = signal_history.clone();
                 let mqtt = mqtt.clone();
                 let handle = tokio::spawn(async move {
-                    run_single_generator(gen_cfg, signals, mqtt).await;
+                    run_single_generator(gen_cfg, signals, history, mqtt).await;
                 });
                 handles.push((gen_id, handle));
             }
@@ -691,6 +707,9 @@ async fn run_generators(
 async fn run_single_generator(
     config: GeneratorConfig,
     current_signals: Arc<Mutex<Vec<Vec<models::FlatEntry>>>>,
+    signal_history: Arc<
+        Mutex<std::collections::HashMap<String, std::collections::VecDeque<(i64, f64)>>>,
+    >,
     mqtt: Arc<mqtt_client::MqttHandle>,
 ) {
     let topic = config.topic.clone();
@@ -771,6 +790,16 @@ async fn run_single_generator(
                     *existing = signal.clone();
                 } else {
                     sigs.push(signal.clone());
+                }
+            }
+
+            // Пишем точку в историю (для осциллографа)
+            {
+                let mut hist = signal_history.lock().await;
+                let buf = hist.entry(id.clone()).or_default();
+                buf.push_back((chrono::Utc::now().timestamp_millis(), val));
+                if buf.len() > api::HISTORY_CAP {
+                    buf.pop_front();
                 }
             }
 

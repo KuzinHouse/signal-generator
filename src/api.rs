@@ -10,6 +10,8 @@ use tokio::sync::Mutex;
 pub struct AppState {
     pub generators: Arc<Mutex<Vec<GeneratorConfig>>>,
     pub current_signals: Arc<Mutex<Vec<Vec<FlatEntry>>>>,
+    pub signal_history:
+        Arc<Mutex<std::collections::HashMap<String, std::collections::VecDeque<(i64, f64)>>>>,
     pub mqtt_handle: Arc<MqttHandle>,
     pub tx_shutdown: tokio::sync::broadcast::Sender<String>,
     pub mqtt_config: Arc<Mutex<MqttConfig>>,
@@ -17,6 +19,9 @@ pub struct AppState {
     #[allow(dead_code)]
     pub started_at: Instant,
 }
+
+/// Лимит точек истории на генератор (60с @1Hz × 3 = 180)
+pub const HISTORY_CAP: usize = 300;
 
 /// Проверка Bearer-токена для мутирующих операций. Если токен не настроен — доступ открыт.
 pub fn auth_ok(state: &AppState, req: &actix_web::HttpRequest) -> bool {
@@ -248,6 +253,30 @@ pub async fn test_mqtt_connection(
     }
 }
 
+/// GET /api/generators/{id}/history — история значений (для осциллографа)
+pub async fn get_generator_history(
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+    query: web::Query<std::collections::HashMap<String, String>>,
+) -> impl Responder {
+    let id = path.into_inner();
+    let limit: usize = query
+        .get("limit")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(120)
+        .min(HISTORY_CAP);
+    let hist = state.signal_history.lock().await;
+    let Some(buf) = hist.get(&id) else {
+        return HttpResponse::NotFound().json(serde_json::json!({"error": "No history yet"}));
+    };
+    let points: Vec<serde_json::Value> = buf
+        .iter()
+        .skip(buf.len().saturating_sub(limit))
+        .map(|(t, v)| serde_json::json!({"t": t, "v": v}))
+        .collect();
+    HttpResponse::Ok().json(serde_json::json!({"id": id, "points": points}))
+}
+
 /// GET /api/mqtt/config — текущие настройки брокера (пароль маскируем)
 pub async fn get_mqtt_config(state: web::Data<AppState>) -> impl Responder {
     let cfg = state.mqtt_config.lock().await;
@@ -332,6 +361,10 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
             .route(
                 "/generators/{id}/current",
                 web::get().to(get_current_signal),
+            )
+            .route(
+                "/generators/{id}/history",
+                web::get().to(get_generator_history),
             )
             .route("/broker", web::get().to(broker_status))
             .route("/broker/history", web::get().to(broker_history))
