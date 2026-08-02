@@ -176,6 +176,12 @@ function initLiveChart(){
   liveChart.width=(c.clientWidth||600)*dpr;liveChart.height=(c.clientHeight||160)*dpr;
   liveChart._dpr=dpr;liveChart.buffer={};
 }
+function resizeCharts(){
+  const dpr=window.devicePixelRatio||1;
+  if(liveChart){liveChart.width=(liveChart.clientWidth||600)*dpr;liveChart.height=(liveChart.clientHeight||160)*dpr;liveChart._dpr=dpr;drawLiveChart()}
+  if(brokerChart){brokerChart.width=brokerChart.clientWidth||600;brokerChart.height=brokerChart.clientHeight||80;drawBrokerChart()}
+}
+window.addEventListener('resize',resizeCharts);
 function upChartUI(){
   const t=document.getElementById('chartToggles');
   t.innerHTML=gens.map((g,i)=>'<label style="cursor:pointer;display:inline-flex;align-items:center;gap:3px;font-size:clamp(7px,0.7vw,9px);font-family:JetBrains Mono,monospace;text-transform:uppercase;letter-spacing:0.5px;color:'+(chartSel.includes(g.id)?COLORS[i%COLORS.length]:'var(--t3)')+'" data-chart="'+esc(g.id)+'"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:'+COLORS[i%COLORS.length]+';opacity:'+(chartSel.includes(g.id)?'1':'0.3')+'"></span>'+esc(g.name)+'</label>').join('');
@@ -245,9 +251,14 @@ function upBrokerChart(h){
   for(const x of h){buf.push({x:now,y1:x.msg_rate??x.msgRate??0,y2:x.heap_pct??x.heapPct??0})}
   const co=now-600000;while(buf.length&&buf[0].x<co)buf.shift();
   if(buf.length>120)buf.splice(0,buf.length-120);
+  drawBrokerChart();
+}
+function drawBrokerChart(){
+  if(!brokerChart)return;
+  const buf=brokerChart.buffer;
   const ctx=brokerChart.getContext('2d');const w=brokerChart.width;const hgt=brokerChart.height;
   ctx.clearRect(0,0,w,hgt);
-  if(buf.length<2)return;
+  if(!buf||buf.length<2)return;
   const maxRate=Math.max(...buf.map(p=>p.y1),1);const maxHeap=Math.max(...buf.map(p=>p.y2),1);
   ctx.strokeStyle='rgba(255,255,255,0.5)';ctx.lineWidth=1;ctx.beginPath();
   buf.forEach((p,i)=>{const x=i/(buf.length-1)*w;const y=hgt-(p.y1/maxRate)*(hgt-20)-10;i===0?ctx.moveTo(x,y):ctx.lineTo(x,y)});ctx.stroke();
