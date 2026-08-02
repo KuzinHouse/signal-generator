@@ -53,7 +53,7 @@ function render(){
   g.innerHTML=gens.map(x=>'<div class="panel '+(x.enabled?'':'disabled')+' '+panelCls(x)+'" id="pn-'+esc(x.id)+'" data-edit="'+esc(x.id)+'">'
     +'<div class="panel-header"><span>'+esc(x.name)+'</span><span>'+esc(x.id)+'</span></div>'
     +'<div class="panel-value gradient-text '+valCol(x)+'" id="pv-'+esc(x.id)+'">'+(signals[x.id]&&Array.isArray(signals[x.id])?gvNum(signals[x.id],x.id).toFixed(1):'—')+'<small> '+esc(x.unit)+'</small></div>'
-    +'<div class="panel-footer">'+esc(x.waveType)+' '+x.intervalMs+'ms'+(x.modbusAddr?' · MB:'+x.modbusAddr:'')+' · <span id="lt-'+esc(x.id)+'">—</span></div>'
+    +'<div class="panel-footer">'+esc(x.topic)+' · '+esc(x.waveType)+' '+x.intervalMs+'ms'+(x.modbusAddr?' · MB:'+x.modbusAddr:'')+' · <span id="lt-'+esc(x.id)+'">—</span></div>'
     +'<div class="wave-icon">'+(WI[x.waveType]||'')+'</div>'
     +'<div class="panel-actions" data-stop="1">'
     +'<label class="toggle"><input type="checkbox"'+(x.enabled?' checked':'')+' data-toggle="'+esc(x.id)+'"><span class="toggle-slider"></span></label>'

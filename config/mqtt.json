@@ -1,0 +1,8 @@
+{
+  "host": "79.174.94.236",
+  "port": 1883,
+  "username": "",
+  "password": "",
+  "topic_prefix": "USEPI",
+  "diagnostics_topic": "USEPI/diagnostics"
+}
