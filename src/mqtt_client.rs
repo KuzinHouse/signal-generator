@@ -1,9 +1,23 @@
 use log::{info, warn};
-use rumqttc::{AsyncClient, Event, MqttOptions, Packet, QoS};
+use rumqttc::{AsyncClient, Event, MqttOptions, Packet, QoS, TlsConfiguration, Transport};
 use serde::Serialize;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
+
+/// Построить TLS-транспорт для rumqttc (доверяет системным корням ОС)
+fn tls_transport() -> Transport {
+    let mut roots = rustls::RootCertStore::empty();
+    if let Ok(certs) = rustls_native_certs::load_native_certs() {
+        for cert in certs {
+            let _ = roots.add(cert);
+        }
+    }
+    let config = rustls::ClientConfig::builder()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+    Transport::Tls(TlsConfiguration::Rustls(Arc::new(config)))
+}
 
 /// MQTT клиент для публикации сигналов + $SYS мониторинг
 pub struct MqttHandle {
@@ -218,6 +232,10 @@ impl MqttHandle {
         if !cfg.username.is_empty() {
             mqttopts.set_credentials(&cfg.username, &cfg.password);
         }
+        if cfg.use_tls {
+            mqttopts.set_transport(tls_transport());
+            info!("MQTT TLS enabled for {}:{}", cfg.host, cfg.port);
+        }
 
         let (client, mut eventloop) = AsyncClient::new(mqttopts, 100);
         let client = Arc::new(Mutex::new(client));
@@ -313,6 +331,10 @@ impl MqttHandle {
         mqttopts.set_clean_session(true);
         if !cfg.username.is_empty() {
             mqttopts.set_credentials(&cfg.username, &cfg.password);
+        }
+        if cfg.use_tls {
+            mqttopts.set_transport(tls_transport());
+            info!("MQTT TLS enabled for {}:{}", cfg.host, cfg.port);
         }
 
         let (client, mut eventloop) = AsyncClient::new(mqttopts, 100);

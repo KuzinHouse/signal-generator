@@ -326,7 +326,14 @@ function applySnapshot(d){
   if(Array.isArray(d.generators)){
     if(JSON.stringify(gens)!==JSON.stringify(d.generators)){gens=d.generators;upCore();upChartUI();render()}
   }
-  if(d.signals&&typeof d.signals==='object'){signals=d.signals;upPanels();upChart();upEv()}
+  if(d.type==='update'&&d.signals&&typeof d.signals==='object'){
+    // дифф: смержить в существующий signals (только изменившиеся)
+    for(const k in d.signals){signals[k]=d.signals[k]}
+    upPanels();upChart();upEv();
+  } else if(d.signals&&typeof d.signals==='object'){
+    // полный снапшот
+    signals=d.signals;upPanels();upChart();upEv()
+  }
   if(d.broker){const b=d.broker;const $=id=>document.getElementById(id);
     $('brokerVer').textContent=b.version||'—';
     $('brokerClients').textContent=b.clients_connected??b.clientsConnected??0;

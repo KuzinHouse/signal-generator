@@ -34,6 +34,9 @@ pub struct MqttConfig {
     /// Топик диагностики
     #[serde(default = "default_diag_topic")]
     pub diagnostics_topic: String,
+    /// Использовать TLS (порт 8883 обычно)
+    #[serde(default)]
+    pub use_tls: bool,
 }
 
 fn default_diag_topic() -> String {
@@ -49,6 +52,7 @@ impl Default for MqttConfig {
             password: String::new(),
             topic_prefix: "USEPI".to_string(),
             diagnostics_topic: "USEPI/diagnostics".to_string(),
+            use_tls: false,
         }
     }
 }
