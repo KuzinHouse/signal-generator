@@ -218,6 +218,21 @@ pub async fn update_mqtt_config(
     } // lock released before save (avoids deadlock)
     crate::persistence::save_mqtt(&cfg).await;
 
+    // Пересчитываем топики генераторов под новый префикс и перезапускаем их
+    let snapshot;
+    {
+        let mut gens = state.generators.lock().await;
+        for g in gens.iter_mut() {
+            let new_topic = cfg.topic_for(&g.id);
+            if g.topic != new_topic {
+                g.topic = new_topic;
+                let _ = state.tx_shutdown.send(format!("update:{}", g.id));
+            }
+        }
+        snapshot = gens.clone();
+    } // lock released
+    crate::persistence::save(&snapshot).await;
+
     // Переподключение MQTT с новыми настройками
     let new_cfg = cfg.clone();
     let mqtt = state.mqtt_handle.clone();

@@ -354,6 +354,8 @@ async fn main() -> std::io::Result<()> {
     })
     .bind("0.0.0.0:8080")?
     .workers(8)
+    .keep_alive(std::time::Duration::from_secs(5))
+    .client_request_timeout(std::time::Duration::from_secs(10))
     .run()
     .await
 }
