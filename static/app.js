@@ -108,13 +108,29 @@ async function upBroker(){
 
 /* ========== панели ========== */
 const WI={Sine:'∿',Sawtooth:'↗',Square:'⊓',Noise:'≈',Random:'?',Constant:'—'};
-let searchQuery='',waveFilter='';
+const CATALOG_ORDER=['temperature','pressure','level','flow','vibration','speed','electrical','water','climate','heating','valve','weight','modbus','agronomy','livestock'];
+const CATALOG_TITLES={temperature:'Температура',pressure:'Давление',level:'Уровень',flow:'Расход',vibration:'Вибрация',speed:'Скорость',electrical:'Электрика',water:'Вода / Водоподготовка',climate:'Климат',heating:'Теплоснабжение',valve:'Клапаны / Состояния',weight:'Вес',modbus:'Modbus',agronomy:'Агрономия',livestock:'Животноводство'};
+function catTitle(c){return c?CATALOG_TITLES[c]||c:'Без каталога'}
+function catIdx(c){const i=CATALOG_ORDER.indexOf(c);return i<0?CATALOG_ORDER.length:i}
+let searchQuery='',waveFilter='',catalogFilter='';
 function filteredGens(){
   const q=searchQuery.trim().toLowerCase();
   let list=gens;
   if(waveFilter)list=list.filter(g=>g.waveType===waveFilter);
+  if(catalogFilter)list=list.filter(g=>(g.catalog||'')===catalogFilter);
   if(q)list=list.filter(g=>(g.name+' '+g.id+' '+g.topic+' '+g.waveType).toLowerCase().includes(q));
   return list;
+}
+function panelHtml(x){
+  return '<div class="panel '+(x.enabled?'':'disabled')+' '+panelCls(x)+'" id="pn-'+esc(x.id)+'" data-edit="'+esc(x.id)+'">'
+    +'<div class="panel-header"><span>'+esc(x.name)+'</span><span>'+esc(x.id)+'</span></div>'
+    +'<div class="panel-value gradient-text '+valCol(x)+'" id="pv-'+esc(x.id)+'">'+(signals[x.id]&&Array.isArray(signals[x.id])?gvNum(signals[x.id],x.id).toFixed(1):'—')+'<small> '+esc(x.unit)+'</small></div>'
+    +'<div class="panel-footer">'+esc(x.topic)+' · '+esc(x.waveType)+' '+x.intervalMs+'ms'+(x.modbusAddr?' · MB:'+x.modbusAddr:'')+' · <span id="lt-'+esc(x.id)+'">—</span></div>'
+    +'<div class="wave-icon">'+(WI[x.waveType]||'')+'</div>'
+    +'<div class="panel-actions" data-stop="1">'
+    +'<label class="toggle"><input type="checkbox"'+(x.enabled?' checked':'')+' data-toggle="'+esc(x.id)+'"><span class="toggle-slider"></span></label>'
+    +'<button class="pn-action" data-del="'+esc(x.id)+'">✕</button></div>'
+    +'<span style="display:none">'+(signals[x.id]&&Array.isArray(signals[x.id])?gvNum(signals[x.id],x.id).toFixed(1)+' '+esc(x.unit):'—')+'</span></div>';
 }
 function upAlarms(){
   const el=document.getElementById('alarmCnt');
@@ -132,15 +148,21 @@ function render(){
   const cnt=document.getElementById('panelsCount');
   if(cnt)cnt.textContent=list.length+' / '+gens.length;
   if(!list.length){g.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:30px;color:var(--t3);font-family:JetBrains Mono,monospace;font-size:10px;text-transform:uppercase">'+(gens.length?'Ничего не найдено':'Нет генераторов')+'</div>';return}
-  g.innerHTML=list.map(x=>'<div class="panel '+(x.enabled?'':'disabled')+' '+panelCls(x)+'" id="pn-'+esc(x.id)+'" data-edit="'+esc(x.id)+'">'
-    +'<div class="panel-header"><span>'+esc(x.name)+'</span><span>'+esc(x.id)+'</span></div>'
-    +'<div class="panel-value gradient-text '+valCol(x)+'" id="pv-'+esc(x.id)+'">'+(signals[x.id]&&Array.isArray(signals[x.id])?gvNum(signals[x.id],x.id).toFixed(1):'—')+'<small> '+esc(x.unit)+'</small></div>'
-    +'<div class="panel-footer">'+esc(x.topic)+' · '+esc(x.waveType)+' '+x.intervalMs+'ms'+(x.modbusAddr?' · MB:'+x.modbusAddr:'')+' · <span id="lt-'+esc(x.id)+'">—</span></div>'
-    +'<div class="wave-icon">'+(WI[x.waveType]||'')+'</div>'
-    +'<div class="panel-actions" data-stop="1">'
-    +'<label class="toggle"><input type="checkbox"'+(x.enabled?' checked':'')+' data-toggle="'+esc(x.id)+'"><span class="toggle-slider"></span></label>'
-    +'<button class="pn-action" data-del="'+esc(x.id)+'">✕</button></div>'
-    +'<span style="display:none">'+(signals[x.id]&&Array.isArray(signals[x.id])?gvNum(signals[x.id],x.id).toFixed(1)+' '+esc(x.unit):'—')+'</span></div>').join('');
+  // группировка по каталогам
+  const groups=[];
+  for(const x of list){
+    const cat=(x.catalog||'').trim();
+    const grp=groups.find(r=>r.cat===cat);
+    if(grp)grp.items.push(x);else groups.push({cat,items:[x]});
+  }
+  groups.sort((a,b)=>catIdx(a.cat)-catIdx(b.cat));
+  g.innerHTML=groups.map(grp=>
+    '<div class="catalog-block">'
+    +'<div class="catalog-header"><span>'+esc(catTitle(grp.cat))+'</span>'
+    +(grp.cat?'<span class="catalog-topic">USEPI/'+esc(grp.cat)+'</span>':'<span class="catalog-topic">—</span>')
+    +'<span class="catalog-count">'+grp.items.length+'</span></div>'
+    +grp.items.map(panelHtml).join('')
+    +'</div>').join('');
 }
 function upPanels(){
   for(const g of gens){
@@ -188,6 +210,7 @@ function openModal(){
   document.getElementById('modalSubmit').textContent='СОЗДАТЬ';
   document.getElementById('generatorForm').reset();
   document.getElementById('fEnabled').checked=true;
+  document.getElementById('fCatalog').value='';
   document.getElementById('modalOverlay').classList.add('open');
 }
 function closeModal(){document.getElementById('modalOverlay').classList.remove('open')}
@@ -196,6 +219,7 @@ function editGen(id){
   const s=id=>document.getElementById(id);
   s('editId').value=g.id;s('modalTitle').textContent='РЕДАКТИРОВАТЬ';s('modalSubmit').textContent='СОХРАНИТЬ';
   s('fId').value=g.id;s('fName').value=g.name;s('fWaveType').value=g.waveType;
+  s('fCatalog').value=g.catalog||'';
   s('fInterval').value=g.intervalMs;s('fAmplitude').value=rnd(g.amplitude);s('fOffset').value=rnd(g.offset);
   s('fFrequency').value=rnd(g.frequency,6);s('fUnit').value=g.unit;s('fMin').value=rnd(g.min);s('fMax').value=rnd(g.max);
   s('fQuality').value=g.quality;s('fEnabled').checked=g.enabled;
@@ -213,6 +237,7 @@ async function saveGenerator(e){
   e.preventDefault();
   const ei=document.getElementById('editId').value;
   const body={id:document.getElementById('fId').value.trim(),name:document.getElementById('fName').value.trim(),
+    catalog:document.getElementById('fCatalog').value,
     waveType:document.getElementById('fWaveType').value,intervalMs:+document.getElementById('fInterval').value,
     amplitude:+document.getElementById('fAmplitude').value,offset:+document.getElementById('fOffset').value,
     frequency:+document.getElementById('fFrequency').value,unit:document.getElementById('fUnit').value,
@@ -453,6 +478,10 @@ document.addEventListener('input',e=>{
 document.addEventListener('change',e=>{
   const wf=e.target.closest('[data-wavefilter]');
   if(wf){waveFilter=wf.value;render()}
+});
+document.addEventListener('change',e=>{
+  const cf=e.target.closest('[data-catalogfilter]');
+  if(cf){catalogFilter=cf.value;render()}
 });
 document.getElementById('generatorForm').addEventListener('submit',saveGenerator);
 document.getElementById('mqttForm').addEventListener('submit',saveMqttSettings);

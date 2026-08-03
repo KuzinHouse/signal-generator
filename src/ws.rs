@@ -1,4 +1,5 @@
 use crate::api::AppState;
+use crate::models::FlatEntry;
 use actix::prelude::*;
 use actix_web_actors::ws;
 use std::collections::HashMap;
@@ -24,6 +25,23 @@ impl WsSession {
         }
     }
 
+    /// Определить id генератора по payload: единственный числовой элемент,
+    /// не являющийся служебным (timestamp/response_code/*_unit/*_min/*_max/*_quality/*_modbus_*).
+    fn payload_id(payload: &[FlatEntry]) -> String {
+        payload
+            .iter()
+            .find(|e| {
+                e.entry_value.is_number()
+                    && !e.id.ends_with("_unit")
+                    && !e.id.ends_with("_min")
+                    && !e.id.ends_with("_max")
+                    && !e.id.ends_with("_quality")
+                    && !e.id.contains("_modbus_")
+            })
+            .map(|e| e.id.trim_start_matches("sensor/").to_string())
+            .unwrap_or_default()
+    }
+
     /// Полный снапшот: генераторы + все сигналы + брокер + история
     async fn full_snapshot(state: &actix_web::web::Data<AppState>) -> serde_json::Value {
         let gens = state.generators.lock().await;
@@ -33,13 +51,14 @@ impl WsSession {
 
         let mut signals_map = serde_json::Map::new();
         for payload in sigs.iter() {
-            if let Some(first) = payload.first() {
-                let id = first.id.trim_start_matches("sensor/").to_string();
-                signals_map.insert(
-                    id,
-                    serde_json::to_value(payload).unwrap_or(serde_json::Value::Null),
-                );
+            let id = WsSession::payload_id(payload);
+            if id.is_empty() {
+                continue;
             }
+            signals_map.insert(
+                id,
+                serde_json::to_value(payload).unwrap_or(serde_json::Value::Null),
+            );
         }
 
         serde_json::json!({
@@ -63,10 +82,10 @@ impl WsSession {
         let mut changed_any = false;
 
         for payload in sigs.iter() {
-            let Some(first) = payload.first() else {
+            let id = WsSession::payload_id(payload);
+            if id.is_empty() {
                 continue;
-            };
-            let id = first.id.trim_start_matches("sensor/").to_string();
+            }
             let ts = payload
                 .iter()
                 .find(|e| e.id == "timestamp")

@@ -66,6 +66,19 @@ impl MqttConfig {
             format!("{}/{}", self.topic_prefix.trim_end_matches('/'), id)
         }
     }
+
+    /// Полный топик с учётом каталога (субтопика): {prefix}/{catalog}/{id}.
+    /// Если каталог пуст — поведение как у topic_for().
+    pub fn topic_for_catalog(&self, catalog: &str, id: &str) -> String {
+        let cat = catalog.trim().trim_matches('/');
+        if cat.is_empty() {
+            self.topic_for(id)
+        } else if self.topic_prefix.is_empty() {
+            format!("/{}/{}", cat, id)
+        } else {
+            format!("{}/{}/{}", self.topic_prefix.trim_end_matches('/'), cat, id)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -106,6 +119,47 @@ mod tests {
     }
 
     #[test]
+    fn test_topic_for_catalog() {
+        let cfg = MqttConfig::default();
+        assert_eq!(
+            cfg.topic_for_catalog("agronomy", "soil-moist-01"),
+            "USEPI/agronomy/soil-moist-01"
+        );
+    }
+
+    #[test]
+    fn test_topic_for_catalog_empty() {
+        let cfg = MqttConfig::default();
+        assert_eq!(cfg.topic_for_catalog("", "temp-01"), "USEPI/temp-01");
+        assert_eq!(
+            cfg.topic_for_catalog("  ", "temp-01"),
+            "USEPI/temp-01",
+            "whitespace catalog must be ignored"
+        );
+    }
+
+    #[test]
+    fn test_topic_for_catalog_slashes_stripped() {
+        let cfg = MqttConfig::default();
+        assert_eq!(
+            cfg.topic_for_catalog("/livestock/", "cow-01"),
+            "USEPI/livestock/cow-01"
+        );
+    }
+
+    #[test]
+    fn test_topic_for_catalog_no_prefix() {
+        let cfg = MqttConfig {
+            topic_prefix: String::new(),
+            ..MqttConfig::default()
+        };
+        assert_eq!(
+            cfg.topic_for_catalog("agronomy", "soil-01"),
+            "/agronomy/soil-01"
+        );
+    }
+
+    #[test]
     fn test_default_config() {
         let cfg = MqttConfig::default();
         assert_eq!(cfg.host, "79.174.94.236");
@@ -136,6 +190,9 @@ pub struct GeneratorConfig {
     pub enabled: bool,
     #[serde(default = "default_topic")]
     pub topic: String,
+    /// Каталог (субтопик): {prefix}/{catalog}/{id}. Пусто = без каталога.
+    #[serde(default = "default_topic")]
+    pub catalog: String,
     #[serde(rename = "waveType")]
     pub wave_type: WaveType,
     #[serde(rename = "intervalMs")]
@@ -222,6 +279,7 @@ impl GeneratorConfig {
             name: name.to_string(),
             enabled: true,
             topic: format!("USEPI/{}", id),
+            catalog: String::new(),
             wave_type: WaveType::Sine,
             interval_ms: 1000,
             amplitude: 10.0,

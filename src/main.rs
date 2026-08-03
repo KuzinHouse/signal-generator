@@ -39,6 +39,7 @@ async fn main() -> std::io::Result<()> {
             name: "Температура печи".into(),
             enabled: true,
             topic: "USEPI/temp-01".into(),
+            catalog: "temperature".into(),
             wave_type: WaveType::Sine,
             interval_ms: 1000,
             amplitude: 10.0,
@@ -72,6 +73,7 @@ async fn main() -> std::io::Result<()> {
             name: "Давление в магистрали".into(),
             enabled: true,
             topic: "USEPI/pressure-01".into(),
+            catalog: "pressure".into(),
             wave_type: WaveType::Noise,
             interval_ms: 500,
             amplitude: 3.0,
@@ -105,6 +107,7 @@ async fn main() -> std::io::Result<()> {
             name: "Уровень в резервуаре".into(),
             enabled: true,
             topic: "USEPI/level-01".into(),
+            catalog: "level".into(),
             wave_type: WaveType::Sawtooth,
             interval_ms: 2000,
             amplitude: 45.0,
@@ -138,6 +141,7 @@ async fn main() -> std::io::Result<()> {
             name: "Вибрация насоса".into(),
             enabled: true,
             topic: "USEPI/vibration-01".into(),
+            catalog: "vibration".into(),
             wave_type: WaveType::Random,
             interval_ms: 100,
             amplitude: 2.0,
@@ -171,6 +175,7 @@ async fn main() -> std::io::Result<()> {
             name: "Состояние клапана".into(),
             enabled: true,
             topic: "USEPI/status-01".into(),
+            catalog: "valve".into(),
             wave_type: WaveType::Constant,
             interval_ms: 5000,
             amplitude: 1.0,
@@ -204,6 +209,7 @@ async fn main() -> std::io::Result<()> {
             name: "MB Давление (HR4001)".into(),
             enabled: true,
             topic: "USEPI/modbus-pressure".into(),
+            catalog: "modbus".into(),
             wave_type: WaveType::Noise,
             interval_ms: 1000,
             amplitude: 50.0,
@@ -448,6 +454,21 @@ async fn main() -> std::io::Result<()> {
     let mut next_id = 10;
     for scenario in scenarios.iter() {
         let (prefix, name, unit, ref wtype, interval, amp, off, mx, freq) = *scenario;
+        let catalog = match prefix {
+            "temp" => "temperature",
+            "press" | "pressure2" => "pressure",
+            "level" => "level",
+            "flow" => "flow",
+            "vibro" => "vibration",
+            "speed" => "speed",
+            "current" | "voltage" | "power" | "freq" => "electrical",
+            "ph" | "conduct" | "turbid" | "oxy" => "water",
+            "co2" | "humidity" => "climate",
+            "temp2" => "heating",
+            "valve" => "valve",
+            "weight" => "weight",
+            _ => "",
+        };
         for inst in 1..=2 {
             // 2 экземпляра каждого типа
             let id = format!("{}-{:02}", prefix, inst);
@@ -457,7 +478,12 @@ async fn main() -> std::io::Result<()> {
                 id,
                 name: n,
                 enabled: true,
-                topic: format!("USEPI/{}-{:02}", prefix, inst),
+                catalog: catalog.to_string(),
+                topic: if catalog.is_empty() {
+                    format!("USEPI/{}-{:02}", prefix, inst)
+                } else {
+                    format!("USEPI/{}/{}-{:02}", catalog, prefix, inst)
+                },
                 wave_type: wtype.clone(),
                 interval_ms: interval,
                 amplitude: amp,

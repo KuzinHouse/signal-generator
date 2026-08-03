@@ -73,6 +73,13 @@ body{background:radial-gradient(circle at 50%30%,#1a1a1a 0%,#000 70%);color:var(
 .stuck-badge{display:inline-block;padding:1px 4px;border:1px solid rgba(255,255,255,0.2);font-size:clamp(5px,0.6vw,7px);color:var(--t2);background:rgba(255,255,255,0.05);margin-left:4px}
 .value-ok{color:#fff}.value-warn{color:rgba(255,255,255,0.5)}.value-bad{color:rgba(255,255,255,0.2)}
 
+/* Catalog groups */
+.catalog-block{grid-column:1/-1;display:contents}
+.catalog-header{grid-column:1/-1;display:flex;align-items:baseline;gap:10px;margin:clamp(8px,1.2vw,14px) 0 clamp(4px,0.6vw,8px);padding:clamp(4px,0.6vw,7px) clamp(8px,1vw,12px);border:1px solid var(--border);background:var(--glass);backdrop-filter:blur(10px);clip-path:polygon(0 0,calc(100%-8px) 0,100% 8px,100% 100%,8px 100%,0 calc(100%-8px));background-image:linear-gradient(90deg,rgba(255,255,255,0.06) 0%,rgba(255,255,255,0) 70%)}
+.catalog-header span:first-child{font-family:'Exo 2',sans-serif;font-weight:400;font-size:clamp(10px,1.1vw,14px);text-transform:uppercase;letter-spacing:2px;color:var(--t1)}
+.catalog-topic{font-family:'JetBrains Mono',monospace;font-size:clamp(7px,0.7vw,9px);text-transform:uppercase;letter-spacing:1px;color:var(--t3)}
+.catalog-count{margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:clamp(7px,0.7vw,9px);color:var(--t3)}
+
 /* Chart */
 .chart-row{background:var(--glass);backdrop-filter:blur(10px);border:1px solid var(--border);clip-path:polygon(0 0,calc(100%-14px) 0,100% 14px,100% 100%,14px 100%,0 calc(100%-14px));background-image:linear-gradient(135deg,rgba(255,255,255,0.04) 0%,rgba(255,255,255,0) 50%);padding:clamp(8px,1vw,14px)}
 .chart-row.fullwidth{width:100vw;margin-left:calc(50% - 50vw);border-left:none;border-right:none;clip-path:none;padding-left:max(clamp(8px,1.5vw,24px),calc((100vw - 1400px)/2 + clamp(8px,1vw,14px)));padding-right:max(clamp(8px,1.5vw,24px),calc((100vw - 1400px)/2 + clamp(8px,1vw,14px)))}
@@ -181,6 +188,24 @@ body{background:radial-gradient(circle at 50%30%,#1a1a1a 0%,#000 70%);color:var(
 <option value="Random">Random</option>
 <option value="Constant">Constant</option>
 </select>
+<select class="panels-search" id="catalogFilter" data-catalogfilter="1" style="flex:0 0 auto;width:auto;cursor:pointer">
+<option value="">ВСЕ КАТАЛОГИ</option>
+<option value="temperature">Температура</option>
+<option value="pressure">Давление</option>
+<option value="level">Уровень</option>
+<option value="flow">Расход</option>
+<option value="vibration">Вибрация</option>
+<option value="speed">Скорость</option>
+<option value="electrical">Электрика</option>
+<option value="water">Вода</option>
+<option value="climate">Климат</option>
+<option value="heating">Теплоснабжение</option>
+<option value="valve">Клапаны</option>
+<option value="weight">Вес</option>
+<option value="modbus">Modbus</option>
+<option value="agronomy">Агрономия</option>
+<option value="livestock">Животноводство</option>
+</select>
 <span class="panels-count" id="panelsCount">0 / 0</span>
 <span style="flex:1"></span>
 <button class="btn-fut" data-action="export-config" title="Скачать бэкап (JSON)">⇩ БЭКАП</button>
@@ -216,6 +241,7 @@ body{background:radial-gradient(circle at 50%30%,#1a1a1a 0%,#000 70%);color:var(
 <div class="section-label">ОСНОВНЫЕ</div>
 <div class="form-group"><label>Имя</label><input type="text" id="fName" required placeholder="Температура"></div>
 <div class="form-group"><label>ID (topic)</label><input type="text" id="fId" placeholder="auto"></div>
+<div class="form-group"><label>Каталог</label><select id="fCatalog"><option value="">—</option><option value="temperature">Температура</option><option value="pressure">Давление</option><option value="level">Уровень</option><option value="flow">Расход</option><option value="vibration">Вибрация</option><option value="speed">Скорость</option><option value="electrical">Электрика</option><option value="water">Вода</option><option value="climate">Климат</option><option value="heating">Теплоснабжение</option><option value="valve">Клапаны</option><option value="weight">Вес</option><option value="modbus">Modbus</option><option value="agronomy">Агрономия</option><option value="livestock">Животноводство</option></select></div>
 <div class="form-group"><label>Волна</label><select id="fWaveType"><option value="Sine">Sine</option><option value="Sawtooth">Sawtooth</option><option value="Square">Square</option><option value="Noise">Noise</option><option value="Random">Random</option><option value="Constant">Constant</option></select></div>
 <div class="form-group"><label>Интервал (ms)</label><input type="number" id="fInterval" value="1000" min="10" step="10"></div>
 <div class="form-group"><label>Амплитуда</label><input type="number" id="fAmplitude" value="10" step="0.1"></div>

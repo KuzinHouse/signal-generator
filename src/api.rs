@@ -61,7 +61,11 @@ pub async fn create_generator(
     if config.id.is_empty() {
         config.id = uuid::Uuid::new_v4().to_string();
     }
-    config.topic = state.mqtt_config.lock().await.topic_for(&config.id);
+    config.topic = state
+        .mqtt_config
+        .lock()
+        .await
+        .topic_for_catalog(&config.catalog, &config.id);
     {
         let mut gens = state.generators.lock().await;
         let _ = state.tx_shutdown.send(format!("new:{}", config.id));
@@ -88,7 +92,11 @@ pub async fn update_generator(
         if let Some(idx) = gens.iter().position(|g| g.id == id) {
             let mut config = body.into_inner();
             config.id = id.clone();
-            config.topic = state.mqtt_config.lock().await.topic_for(&id);
+            config.topic = state
+                .mqtt_config
+                .lock()
+                .await
+                .topic_for_catalog(&config.catalog, &config.id);
             gens[idx] = config.clone();
             let _ = state.tx_shutdown.send(format!("update:{}", id));
             updated = Some(config);
@@ -341,7 +349,11 @@ pub async fn import_config(
     // Заменяем генераторы и перезапускаем их
     let mut imported = gens;
     for g in imported.iter_mut() {
-        let topic = state.mqtt_config.lock().await.topic_for(&g.id);
+        let topic = state
+            .mqtt_config
+            .lock()
+            .await
+            .topic_for_catalog(&g.catalog, &g.id);
         if g.topic.is_empty() || g.topic != topic {
             g.topic = topic;
         }
