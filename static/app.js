@@ -123,7 +123,7 @@ function filteredGens(){
 }
 function panelHtml(x){
   const corr=x.correlation&&x.correlation.masterId?'<span class="corr-badge">⇄ '+esc(x.correlation.masterId)+'</span>':'';
-  return '<div class="panel '+(x.enabled?'':'disabled')+' '+panelCls(x)+'" id="pn-'+esc(x.id)+'" data-edit="'+esc(x.id)+'">'
+  return '<div class="panel '+(x.enabled?'':'disabled')+' '+panelCls(x)+'" id="pn-'+esc(x.id)+'" data-edit="'+esc(x.id)+'" data-ctx="'+esc(x.id)+'">'
     +'<div class="panel-header"><span>'+esc(x.name)+'</span><span>'+esc(x.id)+'</span></div>'
     +'<div class="panel-value gradient-text '+valCol(x)+'" id="pv-'+esc(x.id)+'">'+(signals[x.id]&&Array.isArray(signals[x.id])?gvNum(signals[x.id],x.id).toFixed(1):'—')+'<small> '+esc(x.unit)+'</small></div>'
     +'<div class="panel-footer">'+esc(x.topic)+' · '+esc(x.waveType)+' '+x.intervalMs+'ms'+(x.modbusAddr?' · MB:'+x.modbusAddr:'')+' · <span id="lt-'+esc(x.id)+'">—</span>'+corr+'</div>'
@@ -495,6 +495,64 @@ document.addEventListener('change',e=>{
   const cf=e.target.closest('[data-catalogfilter]');
   if(cf){catalogFilter=cf.value;render()}
 });
+
+/* ========== контекстное меню генератора (правый клик) ========== */
+let ctxId=null;
+document.addEventListener('contextmenu',e=>{
+  let el=e.target;
+  while(el&&el!==document.body&&el!==document.documentElement){
+    if(el.hasAttribute&&el.hasAttribute('data-ctx')){
+      e.preventDefault();
+      showCtx(el.dataset.ctx,e.clientX,e.clientY);
+      return;
+    }
+    el=el.parentElement;
+  }
+});
+document.addEventListener('click',e=>{
+  const menu=document.getElementById('ctxMenu');
+  if(!menu||!menu.classList.contains('open'))return;
+  const item=e.target.closest('[data-ctx-action]');
+  if(item){ctxAction(item.dataset.ctxAction);return}
+  if(!e.target.closest('#ctxMenu'))hideCtx();
+});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')hideCtx()});
+function showCtx(id,x,y){
+  ctxId=id;
+  const g=gens.find(v=>v.id===id);
+  document.getElementById('ctxTitle').textContent=g?(g.name+' ('+id+')').toUpperCase():'ГЕНЕРАТОР';
+  const m=document.getElementById('ctxMenu');
+  m.classList.add('open');
+  m.style.visibility='hidden';
+  const r=m.getBoundingClientRect();
+  m.style.left=Math.min(x,window.innerWidth-r.width-8)+'px';
+  m.style.top=Math.min(y,window.innerHeight-r.height-8)+'px';
+  m.style.visibility='';
+}
+function hideCtx(){document.getElementById('ctxMenu').classList.remove('open');ctxId=null}
+function ctxAction(a){
+  if(!ctxId)return;
+  const id=ctxId;
+  hideCtx();
+  if(a==='edit'){editGen(id);return}
+  if(a==='toggle'){togGen(id);return}
+  if(a==='chart'){toggleChart(id);return}
+  if(a==='copy-id'){copyText(id);return}
+  if(a==='copy-topic'){const g=gens.find(v=>v.id===id);if(g)copyText(g.topic);return}
+  if(a==='duplicate'){dupGen(id);return}
+  if(a==='delete'){delGen(id);return}
+}
+function copyText(t){
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).catch(()=>{});return}
+  const ta=document.createElement('textarea');ta.value=t;ta.style.position='fixed';ta.style.opacity='0';
+  document.body.appendChild(ta);ta.select();try{document.execCommand('copy')}catch(e){}ta.remove();
+}
+async function dupGen(id){
+  const g=gens.find(v=>v.id===id);if(!g)return;
+  const copy={...g,id:g.id+'-copy',name:g.name+' (копия)',enabled:g.enabled};
+  await api('/generators',{method:'POST',body:JSON.stringify(copy)});
+  loadAll();
+}
 document.getElementById('generatorForm').addEventListener('submit',saveGenerator);
 document.getElementById('mqttForm').addEventListener('submit',saveMqttSettings);
 document.getElementById('importFile').addEventListener('change',e=>{

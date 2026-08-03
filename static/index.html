@@ -81,6 +81,16 @@ body{background:radial-gradient(circle at 50%30%,#1a1a1a 0%,#000 70%);color:var(
 .catalog-count{margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:clamp(7px,0.7vw,9px);color:var(--t3)}
 .corr-badge{display:inline-block;padding:1px 4px;border:1px solid rgba(0,220,255,0.25);color:rgba(0,220,255,0.75);font-size:clamp(5px,0.6vw,7px);background:rgba(0,220,255,0.05);margin-left:4px;letter-spacing:0.5px}
 
+/* Context menu */
+.ctx-menu{position:fixed;z-index:300;min-width:220px;display:none;flex-direction:column;padding:4px;background:rgba(8,8,8,0.96);backdrop-filter:blur(12px);border:1px solid var(--border);box-shadow:0 8px 30px rgba(0,0,0,0.6);clip-path:polygon(0 0,calc(100%-10px) 0,100% 10px,100% 100%,10px 100%,0 calc(100%-10px))}
+.ctx-menu.open{display:flex}
+.ctx-title{font-family:'Exo 2',sans-serif;font-size:clamp(8px,0.8vw,10px);font-weight:400;text-transform:uppercase;letter-spacing:1px;color:var(--t3);padding:6px 10px;border-bottom:1px solid var(--border);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
+.ctx-item{background:none;border:none;color:var(--t2);font-family:'JetBrains Mono',monospace;font-size:clamp(8px,0.8vw,10px);text-transform:uppercase;letter-spacing:1px;text-align:left;padding:7px 10px;cursor:pointer;transition:.15s;display:flex;align-items:center;gap:8px;white-space:nowrap}
+.ctx-item:hover{background:rgba(255,255,255,0.08);color:#fff;text-shadow:0 0 6px rgba(255,255,255,0.4)}
+.ctx-item.danger{color:rgba(255,100,100,0.8)}
+.ctx-item.danger:hover{background:rgba(255,80,80,0.15);color:#fff}
+.ctx-sep{height:1px;background:var(--border);margin:4px 6px}
+
 /* Chart */
 .chart-row{background:var(--glass);backdrop-filter:blur(10px);border:1px solid var(--border);clip-path:polygon(0 0,calc(100%-14px) 0,100% 14px,100% 100%,14px 100%,0 calc(100%-14px));background-image:linear-gradient(135deg,rgba(255,255,255,0.04) 0%,rgba(255,255,255,0) 50%);padding:clamp(8px,1vw,14px)}
 .chart-row.fullwidth{width:100vw;margin-left:calc(50% - 50vw);border-left:none;border-right:none;clip-path:none;padding-left:max(clamp(8px,1.5vw,24px),calc((100vw - 1400px)/2 + clamp(8px,1vw,14px)));padding-right:max(clamp(8px,1.5vw,24px),calc((100vw - 1400px)/2 + clamp(8px,1vw,14px)))}
@@ -297,6 +307,20 @@ body{background:radial-gradient(circle at 50%30%,#1a1a1a 0%,#000 70%);color:var(
 </div>
 </form>
 </div></div>
+
+<!-- Context Menu (right-click on panel) -->
+<div class="ctx-menu" id="ctxMenu">
+<div class="ctx-title" id="ctxTitle">ГЕНЕРАТОР</div>
+<button class="ctx-item" data-ctx-action="edit">✎ РЕДАКТИРОВАТЬ</button>
+<button class="ctx-item" data-ctx-action="toggle">⏻ ВКЛ / ВЫКЛ</button>
+<button class="ctx-item" data-ctx-action="chart">∿ НА ГРАФИК</button>
+<div class="ctx-sep"></div>
+<button class="ctx-item" data-ctx-action="copy-id">⧉ КОПИРОВАТЬ ID</button>
+<button class="ctx-item" data-ctx-action="copy-topic">⧉ КОПИРОВАТЬ ТОПИК</button>
+<button class="ctx-item" data-ctx-action="duplicate">⧉ ДУБЛИРОВАТЬ</button>
+<div class="ctx-sep"></div>
+<button class="ctx-item danger" data-ctx-action="delete">✕ УДАЛИТЬ</button>
+</div>
 
 <!-- Confirm Delete Modal -->
 <div class="modal-overlay" id="confirmOverlay" data-action="confirm-no">
