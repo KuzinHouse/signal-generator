@@ -28,6 +28,9 @@ pub struct GeneratorState {
 
     // runtime: счётчик времени для Noise (Box-Muller запоминает второе значение)
     noise_extra: Option<f64>,
+
+    // runtime: последнее значение мастера (для корреляции)
+    master_value: Option<f64>,
 }
 
 impl GeneratorState {
@@ -41,6 +44,7 @@ impl GeneratorState {
             trend_acc: 0.0,
             effective_quality: config.quality as f64,
             noise_extra: None,
+            master_value: None,
             config,
         }
     }
@@ -57,6 +61,12 @@ impl GeneratorState {
         self.trend_acc = 0.0;
         self.effective_quality = self.config.quality as f64;
         self.noise_extra = None;
+        self.master_value = None;
+    }
+
+    /// Установить последнее значение мастера (для коррелированных генераторов)
+    pub fn set_master(&mut self, v: Option<f64>) {
+        self.master_value = v;
     }
 
     /// Сгенерировать следующее значение сигнала с учётом всех эффектов
@@ -103,45 +113,18 @@ impl GeneratorState {
 
         // === Базовое значение волны ===
         let elapsed = self.started_at.elapsed().as_secs_f64();
-        let base_value = match cfg.wave_type {
-            WaveType::Sine => {
-                cfg.offset
-                    + self.drift_acc
-                    + cfg.amplitude * (2.0 * std::f64::consts::PI * cfg.frequency * elapsed).sin()
-            }
-            WaveType::Sawtooth => {
-                let phase = (elapsed * cfg.frequency) % 1.0;
-                cfg.offset + self.drift_acc + cfg.amplitude * (2.0 * phase - 1.0)
-            }
-            WaveType::Square => {
-                let phase = (elapsed * cfg.frequency) % 1.0;
-                let sq = if phase < 0.5 {
-                    cfg.amplitude
-                } else {
-                    -cfg.amplitude
+        let wave = wave_part(cfg, elapsed, &mut rng, &mut self.noise_extra);
+        let base_value = match (&cfg.correlation, self.master_value) {
+            // Корреляция: база = master × factor + offset + собственная волна/дрейф
+            (Some(corr), Some(mv)) => mv * corr.factor + corr.offset + self.drift_acc + wave,
+            // Без мастера — обычное поведение (offset или середина диапазона для Random)
+            _ => {
+                let center = match cfg.wave_type {
+                    WaveType::Random => (cfg.max + cfg.min) * 0.5,
+                    _ => cfg.offset,
                 };
-                cfg.offset + self.drift_acc + sq
+                center + self.drift_acc + wave
             }
-            WaveType::Noise => {
-                // Box-Muller с запоминанием второго значения
-                let n = if let Some(extra) = self.noise_extra.take() {
-                    extra
-                } else {
-                    let u1: f64 = rng.gen();
-                    let u2: f64 = rng.gen();
-                    let n1 = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
-                    let n2 = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).sin();
-                    self.noise_extra = Some(n2);
-                    n1
-                };
-                cfg.offset + self.drift_acc + cfg.amplitude * 0.5 * n
-            }
-            WaveType::Random => {
-                let spread = (cfg.max - cfg.min) * 0.5;
-                let mid = (cfg.max + cfg.min) * 0.5;
-                mid + self.drift_acc + spread * (2.0 * rng.gen::<f64>() - 1.0)
-            }
-            WaveType::Constant => cfg.offset + self.drift_acc,
         };
 
         let mut raw = base_value;
@@ -221,9 +204,56 @@ impl GeneratorState {
     }
 }
 
+/// Чистая волновая часть сигнала (без offset/центрирования и дрейфа).
+/// Для Random возвращает spread × U(-1,1) — база центрируется вызывающим кодом.
+fn wave_part(
+    cfg: &GeneratorConfig,
+    elapsed: f64,
+    rng: &mut impl Rng,
+    noise_extra: &mut Option<f64>,
+) -> f64 {
+    match cfg.wave_type {
+        WaveType::Sine => {
+            cfg.amplitude * (2.0 * std::f64::consts::PI * cfg.frequency * elapsed).sin()
+        }
+        WaveType::Sawtooth => {
+            let phase = (elapsed * cfg.frequency) % 1.0;
+            cfg.amplitude * (2.0 * phase - 1.0)
+        }
+        WaveType::Square => {
+            let phase = (elapsed * cfg.frequency) % 1.0;
+            if phase < 0.5 {
+                cfg.amplitude
+            } else {
+                -cfg.amplitude
+            }
+        }
+        WaveType::Noise => {
+            // Box-Muller с запоминанием второго значения
+            let n = if let Some(extra) = noise_extra.take() {
+                extra
+            } else {
+                let u1: f64 = rng.gen();
+                let u2: f64 = rng.gen();
+                let n1 = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
+                let n2 = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).sin();
+                *noise_extra = Some(n2);
+                n1
+            };
+            cfg.amplitude * 0.5 * n
+        }
+        WaveType::Random => {
+            let spread = (cfg.max - cfg.min) * 0.5;
+            spread * (2.0 * rng.gen::<f64>() - 1.0)
+        }
+        WaveType::Constant => 0.0,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::CorrelationConfig;
 
     fn base_cfg() -> GeneratorConfig {
         GeneratorConfig::default_sine("test", "test")
@@ -317,5 +347,52 @@ mod tests {
         let mut state = GeneratorState::new(cfg);
         let v = state.next_value(Some(1.0)).unwrap();
         assert!(v.abs() > 5.0 || v.abs() < 5.0, "Spike magnitude: {}", v);
+    }
+
+    #[test]
+    fn test_correlation_with_master() {
+        let mut cfg = base_cfg();
+        cfg.wave_type = WaveType::Constant;
+        cfg.amplitude = 0.0; // чистая база, без собственной волны
+        cfg.offset = 0.0;
+        cfg.noise_amp = 0.0;
+        cfg.spike_prob = 0.0;
+        cfg.drop_prob = 0.0;
+        cfg.correlation = Some(CorrelationConfig {
+            master_id: "master-01".into(),
+            factor: 2.0,
+            offset: 5.0,
+        });
+        cfg.max = 1000.0; // не клиппить коррелированную базу 205
+        let mut state = GeneratorState::new(cfg.clone());
+        state.set_master(Some(100.0));
+        let v = state.next_value(Some(0.01)).unwrap();
+        assert!((v - 205.0).abs() < 0.001, "Corr base: {}", v);
+        // без мастера — fallback на собственный offset
+        let mut state2 = GeneratorState::new(cfg);
+        let v2 = state2.next_value(Some(0.01)).unwrap();
+        assert!(v2.abs() < 0.001, "No-master fallback: {}", v2);
+    }
+
+    #[test]
+    fn test_correlation_sine_follows_master() {
+        let mut cfg = base_cfg();
+        cfg.wave_type = WaveType::Sine;
+        cfg.amplitude = 1.0;
+        cfg.frequency = 0.001;
+        cfg.noise_amp = 0.0;
+        cfg.spike_prob = 0.0;
+        cfg.drop_prob = 0.0;
+        cfg.correlation = Some(CorrelationConfig {
+            master_id: "par-01".into(),
+            factor: 0.012,
+            offset: 19.0,
+        });
+        let mut state = GeneratorState::new(cfg);
+        state.set_master(Some(400.0));
+        let v1 = state.next_value(Some(0.01)).unwrap();
+        state.set_master(Some(500.0)); // мастер вырос
+        let v2 = state.next_value(Some(0.01)).unwrap();
+        assert!(v2 > v1, "Slave should follow master: {} -> {}", v1, v2);
     }
 }

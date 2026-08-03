@@ -88,8 +88,18 @@ fn panel_html(g: &GeneratorConfig, signals: &[Vec<FlatEntry>]) -> String {
     // Найти последний сигнал генератора
     let (val_str, lat_str) = signal_value(g, signals);
     let cls = panel_class(g, signals);
+    let corr_badge = g
+        .correlation
+        .as_ref()
+        .map(|c| {
+            format!(
+                "<span class=\"corr-badge\">⇄ {}</span>",
+                html_escape(&c.master_id)
+            )
+        })
+        .unwrap_or_default();
     format!(
-        "<div class=\"panel {}\" id=\"pn-{}\" data-edit=\"{}\"><div class=\"panel-header\"><span>{}</span><span>{}</span></div><div class=\"panel-value gradient-text {}\" id=\"pv-{}\">{}<small> {}</small></div><div class=\"panel-footer\">{} · {} {}ms{} · <span id=\"lt-{}\">{}</span></div><div class=\"wave-icon\">{}</div><div class=\"panel-actions\" data-stop=\"1\"><label class=\"toggle\"><input type=\"checkbox\"{} data-toggle=\"{}\"><span class=\"toggle-slider\"></span></label><button class=\"pn-action\" data-del=\"{}\">✕</button></div></div>",
+        "<div class=\"panel {}\" id=\"pn-{}\" data-edit=\"{}\"><div class=\"panel-header\"><span>{}</span><span>{}</span></div><div class=\"panel-value gradient-text {}\" id=\"pv-{}\">{}<small> {}</small></div><div class=\"panel-footer\">{} · {} {}ms{} · <span id=\"lt-{}\">{}</span>{}</div><div class=\"wave-icon\">{}</div><div class=\"panel-actions\" data-stop=\"1\"><label class=\"toggle\"><input type=\"checkbox\"{} data-toggle=\"{}\"><span class=\"toggle-slider\"></span></label><button class=\"pn-action\" data-del=\"{}\">✕</button></div></div>",
         if g.enabled { "" } else { "disabled" },
         g.id,
         g.id,
@@ -105,6 +115,7 @@ fn panel_html(g: &GeneratorConfig, signals: &[Vec<FlatEntry>]) -> String {
         if g.modbus_addr > 0 { format!(" · MB:{}", g.modbus_addr) } else { String::new() },
         g.id,
         lat_str,
+        corr_badge,
         wi,
         if g.enabled { " checked" } else { "" },
         g.id,
@@ -167,7 +178,14 @@ fn panel_class(g: &GeneratorConfig, signals: &[Vec<FlatEntry>]) -> String {
         .and_then(|e| e.entry_value.as_u64());
     let Some(v) = v else { return String::new() };
     let q = q.unwrap_or(100);
-    let r = (v - g.offset).abs() / g.amplitude.max(1.0);
+    // Коррелированные сигналы центрируются вокруг master×factor+offset, а не offset —
+    // нормализуем по середине диапазона, чтобы панели не алермили постоянно
+    let (center, span) = if g.correlation.is_some() {
+        ((g.min + g.max) * 0.5, (g.max - g.min).max(1.0) * 0.5)
+    } else {
+        (g.offset, g.amplitude.max(1.0))
+    };
+    let r = (v - center).abs() / span;
     if r > 0.9 || q < 50 {
         "alarm".to_string()
     } else if r > 0.7 || q < 80 {

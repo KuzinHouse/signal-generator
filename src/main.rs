@@ -40,6 +40,7 @@ async fn main() -> std::io::Result<()> {
             enabled: true,
             topic: "USEPI/temp-01".into(),
             catalog: "temperature".into(),
+            correlation: None,
             wave_type: WaveType::Sine,
             interval_ms: 1000,
             amplitude: 10.0,
@@ -74,6 +75,7 @@ async fn main() -> std::io::Result<()> {
             enabled: true,
             topic: "USEPI/pressure-01".into(),
             catalog: "pressure".into(),
+            correlation: None,
             wave_type: WaveType::Noise,
             interval_ms: 500,
             amplitude: 3.0,
@@ -108,6 +110,7 @@ async fn main() -> std::io::Result<()> {
             enabled: true,
             topic: "USEPI/level-01".into(),
             catalog: "level".into(),
+            correlation: None,
             wave_type: WaveType::Sawtooth,
             interval_ms: 2000,
             amplitude: 45.0,
@@ -142,6 +145,7 @@ async fn main() -> std::io::Result<()> {
             enabled: true,
             topic: "USEPI/vibration-01".into(),
             catalog: "vibration".into(),
+            correlation: None,
             wave_type: WaveType::Random,
             interval_ms: 100,
             amplitude: 2.0,
@@ -176,6 +180,7 @@ async fn main() -> std::io::Result<()> {
             enabled: true,
             topic: "USEPI/status-01".into(),
             catalog: "valve".into(),
+            correlation: None,
             wave_type: WaveType::Constant,
             interval_ms: 5000,
             amplitude: 1.0,
@@ -210,6 +215,7 @@ async fn main() -> std::io::Result<()> {
             enabled: true,
             topic: "USEPI/modbus-pressure".into(),
             catalog: "modbus".into(),
+            correlation: None,
             wave_type: WaveType::Noise,
             interval_ms: 1000,
             amplitude: 50.0,
@@ -479,6 +485,7 @@ async fn main() -> std::io::Result<()> {
                 name: n,
                 enabled: true,
                 catalog: catalog.to_string(),
+                correlation: None,
                 topic: if catalog.is_empty() {
                     format!("USEPI/{}-{:02}", prefix, inst)
                 } else {
@@ -533,12 +540,16 @@ async fn main() -> std::io::Result<()> {
     let signal_history: Arc<
         Mutex<std::collections::HashMap<String, std::collections::VecDeque<(i64, f64)>>>,
     > = Arc::new(Mutex::new(std::collections::HashMap::new()));
+    // Последнее значение каждого генератора — источник для корреляций (master → slave)
+    let last_values: Arc<Mutex<std::collections::HashMap<String, f64>>> =
+        Arc::new(Mutex::new(std::collections::HashMap::new()));
     let (tx_shutdown, rx_shutdown) = tokio::sync::broadcast::channel::<String>(100);
     let started_at = Instant::now();
 
     let gen_generators = generators.clone();
     let gen_signals = current_signals.clone();
     let gen_history = signal_history.clone();
+    let gen_last = last_values.clone();
     let gen_mqtt = mqtt_arc.clone();
     let mut gen_rx = rx_shutdown;
 
@@ -547,6 +558,7 @@ async fn main() -> std::io::Result<()> {
             gen_generators,
             gen_signals,
             gen_history,
+            gen_last,
             gen_mqtt,
             &mut gen_rx,
         )
@@ -655,6 +667,7 @@ async fn run_generators(
     signal_history: Arc<
         Mutex<std::collections::HashMap<String, std::collections::VecDeque<(i64, f64)>>>,
     >,
+    last_values: Arc<Mutex<std::collections::HashMap<String, f64>>>,
     mqtt: Arc<mqtt_client::MqttHandle>,
     rx: &mut tokio::sync::broadcast::Receiver<String>,
 ) {
@@ -708,9 +721,10 @@ async fn run_generators(
                 let gen_cfg = gen.clone();
                 let signals = current_signals.clone();
                 let history = signal_history.clone();
+                let last = last_values.clone();
                 let mqtt = mqtt.clone();
                 let handle = tokio::spawn(async move {
-                    run_single_generator(gen_cfg, signals, history, mqtt).await;
+                    run_single_generator(gen_cfg, signals, history, last, mqtt).await;
                 });
                 handles.push((gen_id, handle));
             }
@@ -736,6 +750,7 @@ async fn run_single_generator(
     signal_history: Arc<
         Mutex<std::collections::HashMap<String, std::collections::VecDeque<(i64, f64)>>>,
     >,
+    last_values: Arc<Mutex<std::collections::HashMap<String, f64>>>,
     mqtt: Arc<mqtt_client::MqttHandle>,
 ) {
     let topic = config.topic.clone();
@@ -777,11 +792,19 @@ async fn run_single_generator(
 
         let value = {
             let mut s = state.lock().await;
+            // Корреляция: подставляем последнее значение мастера (если есть)
+            if s.config.correlation.is_some() {
+                let master_id = s.config.correlation.as_ref().unwrap().master_id.clone();
+                let mv = last_values.lock().await.get(&master_id).copied();
+                s.set_master(mv);
+            }
             let dt = actual_interval.as_secs_f64();
             s.next_value(Some(dt))
         };
 
         if let Some(val) = value {
+            // Запоминаем значение как источник для коррелированных генераторов
+            last_values.lock().await.insert(id.clone(), val);
             let (quality, cfg) = {
                 let s = state.lock().await;
                 (s.quality(), s.config.clone())

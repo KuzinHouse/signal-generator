@@ -15,6 +15,19 @@ fn default_topic() -> String {
     String::new()
 }
 
+/// Конфигурация корреляции: ведомый сигнал = master_value × factor + offset.
+/// Собственная волна/шум ведомого накладываются поверх коррелированной базы.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CorrelationConfig {
+    /// id генератора-мастера (источник значения)
+    #[serde(rename = "masterId")]
+    pub master_id: String,
+    /// Коэффициент связи: slave = master × factor + offset
+    pub factor: f64,
+    /// Смещение связи
+    pub offset: f64,
+}
+
 /// Конфигурация MQTT брокера — сохраняется в config/mqtt.json
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MqttConfig {
@@ -167,6 +180,35 @@ mod tests {
         assert_eq!(cfg.diagnostics_topic, "USEPI/diagnostics");
         assert!(cfg.username.is_empty());
     }
+
+    #[test]
+    fn test_correlation_default_none() {
+        // старый конфиг без поля correlation десериализуется в None
+        let c: GeneratorConfig = serde_json::from_str(
+            r#"{"id":"x","name":"x","enabled":true,"topic":"t","catalog":"",
+                "waveType":"Sine","intervalMs":1000,"amplitude":1,"offset":0,
+                "frequency":0,"unit":"","quality":100,"min":0,"max":10,
+                "drift":0.0,"spikeProb":0.0,"spikeAmp":0.0,"noiseAmp":0.0,
+                "deadband":0.0,"hysteresis":0.0,"stuckProb":0.0,"stuckDurationMs":0,
+                "jitter":0.0,"trend":0.0,"dropProb":0.0,"degradationRate":0.0}"#,
+        )
+        .unwrap();
+        assert!(c.correlation.is_none());
+    }
+
+    #[test]
+    fn test_correlation_roundtrip() {
+        let mut c = GeneratorConfig::default_sine("s", "slave");
+        c.correlation = Some(CorrelationConfig {
+            master_id: "m-01".into(),
+            factor: 2.0,
+            offset: 5.0,
+        });
+        let json = serde_json::to_string(&c).unwrap();
+        assert!(json.contains("\"masterId\":\"m-01\""), "{}", json);
+        let back: GeneratorConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.correlation, c.correlation);
+    }
 }
 
 impl std::fmt::Display for WaveType {
@@ -193,6 +235,9 @@ pub struct GeneratorConfig {
     /// Каталог (субтопик): {prefix}/{catalog}/{id}. Пусто = без каталога.
     #[serde(default = "default_topic")]
     pub catalog: String,
+    /// Корреляция с мастер-сигналом. None = независимый генератор.
+    #[serde(default)]
+    pub correlation: Option<CorrelationConfig>,
     #[serde(rename = "waveType")]
     pub wave_type: WaveType,
     #[serde(rename = "intervalMs")]
@@ -280,6 +325,7 @@ impl GeneratorConfig {
             enabled: true,
             topic: format!("USEPI/{}", id),
             catalog: String::new(),
+            correlation: None,
             wave_type: WaveType::Sine,
             interval_ms: 1000,
             amplitude: 10.0,

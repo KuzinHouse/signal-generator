@@ -122,10 +122,11 @@ function filteredGens(){
   return list;
 }
 function panelHtml(x){
+  const corr=x.correlation&&x.correlation.masterId?'<span class="corr-badge">⇄ '+esc(x.correlation.masterId)+'</span>':'';
   return '<div class="panel '+(x.enabled?'':'disabled')+' '+panelCls(x)+'" id="pn-'+esc(x.id)+'" data-edit="'+esc(x.id)+'">'
     +'<div class="panel-header"><span>'+esc(x.name)+'</span><span>'+esc(x.id)+'</span></div>'
     +'<div class="panel-value gradient-text '+valCol(x)+'" id="pv-'+esc(x.id)+'">'+(signals[x.id]&&Array.isArray(signals[x.id])?gvNum(signals[x.id],x.id).toFixed(1):'—')+'<small> '+esc(x.unit)+'</small></div>'
-    +'<div class="panel-footer">'+esc(x.topic)+' · '+esc(x.waveType)+' '+x.intervalMs+'ms'+(x.modbusAddr?' · MB:'+x.modbusAddr:'')+' · <span id="lt-'+esc(x.id)+'">—</span></div>'
+    +'<div class="panel-footer">'+esc(x.topic)+' · '+esc(x.waveType)+' '+x.intervalMs+'ms'+(x.modbusAddr?' · MB:'+x.modbusAddr:'')+' · <span id="lt-'+esc(x.id)+'">—</span>'+corr+'</div>'
     +'<div class="wave-icon">'+(WI[x.waveType]||'')+'</div>'
     +'<div class="panel-actions" data-stop="1">'
     +'<label class="toggle"><input type="checkbox"'+(x.enabled?' checked':'')+' data-toggle="'+esc(x.id)+'"><span class="toggle-slider"></span></label>'
@@ -179,8 +180,8 @@ function upPanels(){
     if(pn){const cls=['panel'];if(!g.enabled)cls.push('disabled');cls.push(panelCls(g));pn.className=cls.join(' ')}
   }
 }
-function valCol(g){const s=signals[g.id];if(!s||!Array.isArray(s))return'value-ok';const v=gvNum(s,g.id),q=gvNum(s,g.id+'_quality');const r=Math.abs(v-g.offset)/(g.amplitude||1);if(r>0.9||q<50)return'value-bad';if(r>0.7||q<80)return'value-warn';return'value-ok'}
-function panelCls(g){const s=signals[g.id];if(!s||!Array.isArray(s))return'';const v=gvNum(s,g.id),q=gvNum(s,g.id+'_quality');const r=Math.abs(v-g.offset)/(g.amplitude||1);if(r>0.9||q<50)return'alarm';if(r>0.7||q<80)return'warning';return''}
+function valCol(g){const s=signals[g.id];if(!s||!Array.isArray(s))return'value-ok';const v=gvNum(s,g.id),q=gvNum(s,g.id+'_quality');const center=g.correlation?(g.min+g.max)/2:g.offset;const span=g.correlation?Math.max((g.max-g.min)/2,1):(g.amplitude||1);const r=Math.abs(v-center)/span;if(r>0.9||q<50)return'value-bad';if(r>0.7||q<80)return'value-warn';return'value-ok'}
+function panelCls(g){const s=signals[g.id];if(!s||!Array.isArray(s))return'';const v=gvNum(s,g.id),q=gvNum(s,g.id+'_quality');const center=g.correlation?(g.min+g.max)/2:g.offset;const span=g.correlation?Math.max((g.max-g.min)/2,1):(g.amplitude||1);const r=Math.abs(v-center)/span;if(r>0.9||q<50)return'alarm';if(r>0.7||q<80)return'warning';return''}
 function upStat(){document.getElementById('mqttDot').className='mqtt-dot online'}
 function upCore(){
   const t=gens.length,a=gens.filter(g=>g.enabled).length,
@@ -211,6 +212,9 @@ function openModal(){
   document.getElementById('generatorForm').reset();
   document.getElementById('fEnabled').checked=true;
   document.getElementById('fCatalog').value='';
+  document.getElementById('fCorrMaster').value='';
+  document.getElementById('fCorrFactor').value='1';
+  document.getElementById('fCorrOffset').value='0';
   document.getElementById('modalOverlay').classList.add('open');
 }
 function closeModal(){document.getElementById('modalOverlay').classList.remove('open')}
@@ -229,6 +233,9 @@ function editGen(id){
   s('fStuckProb').value=rnd(g.stuckProb||0);s('fStuckDur').value=g.stuckDurationMs||3000;
   s('fJitter').value=rnd(g.jitter||0);s('fDropProb').value=rnd(g.dropProb||0);
   s('fDegradation').value=rnd(g.degradationRate||0);
+  s('fCorrMaster').value=g.correlation?g.correlation.masterId:'';
+  s('fCorrFactor').value=rnd(g.correlation?g.correlation.factor:1.0);
+  s('fCorrOffset').value=rnd(g.correlation?g.correlation.offset:0.0);
   s('fMbAddr').value=g.modbusAddr||0;s('fMbFn').value=g.modbusFn||0;s('fMbType').value=g.modbusType||0;
   s('fMbScale').value=rnd(g.modbusScale||1.0);s('fMbSlave').value=g.modbusSlave||1;
   s('modalOverlay').classList.add('open');
@@ -251,7 +258,12 @@ async function saveGenerator(e){
     dropProb:+document.getElementById('fDropProb').value,degradationRate:+document.getElementById('fDegradation').value,
     modbusAddr:+document.getElementById('fMbAddr').value,modbusFn:+document.getElementById('fMbFn').value,
     modbusType:+document.getElementById('fMbType').value,modbusScale:+document.getElementById('fMbScale').value,
-    modbusSlave:+document.getElementById('fMbSlave').value};
+    modbusSlave:+document.getElementById('fMbSlave').value,
+    correlation:document.getElementById('fCorrMaster').value.trim()
+      ?{masterId:document.getElementById('fCorrMaster').value.trim(),
+        factor:+document.getElementById('fCorrFactor').value||1,
+        offset:+document.getElementById('fCorrOffset').value||0}
+      :null};
   const req = ei
     ? api('/generators/'+ei,{method:'PUT',body:JSON.stringify({...body,id:ei})})
     : api('/generators',{method:'POST',body:JSON.stringify(body)});
