@@ -1,0 +1,10 @@
+target
+.git
+.hermes
+rustup-init
+scripts/__pycache__
+**/__pycache__
+*.log
+*.bak*
+config/*.bak*
+config/*.oldsingle
