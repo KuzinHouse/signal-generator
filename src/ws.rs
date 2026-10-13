@@ -46,8 +46,12 @@ impl WsSession {
     async fn full_snapshot(state: &actix_web::web::Data<AppState>) -> serde_json::Value {
         let gens = state.generators.lock().await;
         let sigs = state.current_signals.lock().await;
-        let broker = state.mqtt_handle.get_broker_status().await;
-        let history = state.mqtt_handle.get_broker_history().await;
+        let broker = state.mqtt_handle.primary_status().await;
+        let history = state
+            .mqtt_handle
+            .broker_history("local")
+            .await
+            .unwrap_or_default();
 
         let mut signals_map = serde_json::Map::new();
         for payload in sigs.iter() {

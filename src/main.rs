@@ -11,7 +11,7 @@ mod ws;
 use actix_files::Files;
 use actix_web::{middleware, web, App, HttpServer};
 use api::AppState;
-use config::{GeneratorConfig, WaveType};
+use config::{GeneratorConfig, PayloadFormat, WaveType};
 use generator::GeneratorState;
 use log::info;
 use std::sync::Arc;
@@ -28,8 +28,12 @@ async fn main() -> std::io::Result<()> {
         log::info!("No saved MQTT config, using defaults");
         config::MqttConfig::default()
     });
-    let mqtt_host = mqtt_config.host.clone();
-    let mqtt_port = mqtt_config.port;
+    let mqtt_broker_count = mqtt_config.enabled_brokers().len();
+    let mqtt_summary: Vec<String> = mqtt_config
+        .enabled_brokers()
+        .iter()
+        .map(|b| format!("{}:{}", b.host, b.port))
+        .collect();
 
     // Демо-генераторы с реалистичными настройками
     let mut default_generators = vec![
@@ -62,11 +66,21 @@ async fn main() -> std::io::Result<()> {
             trend: 0.0,
             drop_prob: 0.005,
             degradation_rate: 0.0,
+            phase_deg: 0.0,
+            duty_cycle: 0.5,
+            walk_sigma: 0.1,
+            step_period: 10.0,
+            secondary_frequency: 0.0,
+            warn_min: None,
+            warn_max: None,
+            alarm_min: None,
+            alarm_max: None,
             modbus_addr: 0,
             modbus_fn: 0,
             modbus_type: 0,
             modbus_scale: 1.0,
             modbus_slave: 0,
+            payload_format: PayloadFormat::Flat,
         },
         GeneratorConfig {
             // Давление: шум с джиттером, случайные выбросы
@@ -97,11 +111,21 @@ async fn main() -> std::io::Result<()> {
             trend: 0.0,
             drop_prob: 0.01,
             degradation_rate: 0.0,
+            phase_deg: 0.0,
+            duty_cycle: 0.5,
+            walk_sigma: 0.1,
+            step_period: 10.0,
+            secondary_frequency: 0.0,
+            warn_min: None,
+            warn_max: None,
+            alarm_min: None,
+            alarm_max: None,
             modbus_addr: 0,
             modbus_fn: 0,
             modbus_type: 0,
             modbus_scale: 1.0,
             modbus_slave: 0,
+            payload_format: PayloadFormat::Flat,
         },
         GeneratorConfig {
             // Уровень: пила с гистерезисом, дрейф вниз
@@ -132,11 +156,21 @@ async fn main() -> std::io::Result<()> {
             trend: 0.0,
             drop_prob: 0.002,
             degradation_rate: 0.0,
+            phase_deg: 0.0,
+            duty_cycle: 0.5,
+            walk_sigma: 0.1,
+            step_period: 10.0,
+            secondary_frequency: 0.0,
+            warn_min: None,
+            warn_max: None,
+            alarm_min: None,
+            alarm_max: None,
             modbus_addr: 0,
             modbus_fn: 0,
             modbus_type: 0,
             modbus_scale: 1.0,
             modbus_slave: 0,
+            payload_format: PayloadFormat::Flat,
         },
         GeneratorConfig {
             // Вибрация: случайный сигнал с частыми выбросами, деградация
@@ -167,11 +201,21 @@ async fn main() -> std::io::Result<()> {
             trend: 0.05,
             drop_prob: 0.02,
             degradation_rate: 0.5,
+            phase_deg: 0.0,
+            duty_cycle: 0.5,
+            walk_sigma: 0.1,
+            step_period: 10.0,
+            secondary_frequency: 0.0,
+            warn_min: None,
+            warn_max: None,
+            alarm_min: None,
+            alarm_max: None,
             modbus_addr: 0,
             modbus_fn: 0,
             modbus_type: 0,
             modbus_scale: 1.0,
             modbus_slave: 0,
+            payload_format: PayloadFormat::Flat,
         },
         GeneratorConfig {
             // Клапан: константа, мёртвая зона, редкие переключения
@@ -202,11 +246,21 @@ async fn main() -> std::io::Result<()> {
             trend: 0.0,
             drop_prob: 0.0,
             degradation_rate: 0.0,
+            phase_deg: 0.0,
+            duty_cycle: 0.5,
+            walk_sigma: 0.1,
+            step_period: 10.0,
+            secondary_frequency: 0.0,
+            warn_min: None,
+            warn_max: None,
+            alarm_min: None,
+            alarm_max: None,
             modbus_addr: 0,
             modbus_fn: 0,
             modbus_type: 0,
             modbus_scale: 1.0,
             modbus_slave: 0,
+            payload_format: PayloadFormat::Flat,
         },
         // Modbus-тег: давление как Holding Register
         GeneratorConfig {
@@ -237,11 +291,21 @@ async fn main() -> std::io::Result<()> {
             trend: 0.0,
             drop_prob: 0.0,
             degradation_rate: 0.0,
+            phase_deg: 0.0,
+            duty_cycle: 0.5,
+            walk_sigma: 0.1,
+            step_period: 10.0,
+            secondary_frequency: 0.0,
+            warn_min: None,
+            warn_max: None,
+            alarm_min: None,
+            alarm_max: None,
             modbus_addr: 4001,
             modbus_fn: 3,
             modbus_type: 0,
             modbus_scale: 0.1,
             modbus_slave: 1,
+            payload_format: PayloadFormat::Flat,
         },
     ];
     // Добавляем 40 дополнительных генераторов из шаблонов
@@ -512,11 +576,21 @@ async fn main() -> std::io::Result<()> {
                 trend: 0.0,
                 drop_prob: 0.003,
                 degradation_rate: 0.0,
+                phase_deg: 0.0,
+                duty_cycle: 0.5,
+                walk_sigma: 0.1,
+                step_period: 10.0,
+                secondary_frequency: 0.0,
+                warn_min: None,
+                warn_max: None,
+                alarm_min: None,
+                alarm_max: None,
                 modbus_addr: next_id,
                 modbus_fn: 3,
                 modbus_type: 0,
                 modbus_scale: 1.0,
                 modbus_slave: 1,
+                payload_format: PayloadFormat::Flat,
             });
             next_id += 1;
         }
@@ -531,7 +605,7 @@ async fn main() -> std::io::Result<()> {
         log::info!("Loaded {} generators from file", initial_generators.len());
     }
 
-    let mqtt = mqtt_client::MqttHandle::connect(&mqtt_config, "signal-generator").await;
+    let mqtt = mqtt_client::MqttManager::connect(&mqtt_config).await;
     let mqtt_arc = Arc::new(mqtt);
     let mqtt_config_arc = Arc::new(Mutex::new(mqtt_config));
 
@@ -545,12 +619,14 @@ async fn main() -> std::io::Result<()> {
         Arc::new(Mutex::new(std::collections::HashMap::new()));
     let (tx_shutdown, rx_shutdown) = tokio::sync::broadcast::channel::<String>(100);
     let started_at = Instant::now();
+    let global_speed = Arc::new(Mutex::new(1.0f64));
 
     let gen_generators = generators.clone();
     let gen_signals = current_signals.clone();
     let gen_history = signal_history.clone();
     let gen_last = last_values.clone();
     let gen_mqtt = mqtt_arc.clone();
+    let gen_speed = global_speed.clone();
     let mut gen_rx = rx_shutdown;
 
     tokio::spawn(async move {
@@ -560,6 +636,7 @@ async fn main() -> std::io::Result<()> {
             gen_history,
             gen_last,
             gen_mqtt,
+            gen_speed,
             &mut gen_rx,
         )
         .await;
@@ -568,7 +645,6 @@ async fn main() -> std::io::Result<()> {
     // Публикация диагностики в MQTT каждые 10 секунд
     let diag_generators = generators.clone();
     let diag_mqtt = mqtt_arc.clone();
-    let diag_mqtt_cfg = mqtt_config_arc.clone();
     let diag_started = started_at;
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(10));
@@ -585,13 +661,12 @@ async fn main() -> std::io::Result<()> {
                 env!("CARGO_PKG_VERSION"),
                 diag_started.elapsed().as_secs(),
                 &gens,
-                diag_mqtt.is_connected(),
+                diag_mqtt.any_connected().await,
                 rate,
                 total,
             );
             drop(gens);
-            let topic = diag_mqtt_cfg.lock().await.diagnostics_topic.clone();
-            let _ = diag_mqtt.publish(&topic, &diag).await;
+            let _ = diag_mqtt.publish_diagnostics(&diag).await;
         }
     });
 
@@ -613,11 +688,12 @@ async fn main() -> std::io::Result<()> {
         mqtt_handle: mqtt_arc.clone(),
         mqtt_config: mqtt_config_arc.clone(),
         api_token,
+        global_speed,
         started_at: Instant::now(),
     });
 
     info!("Starting server on http://0.0.0.0:8080");
-    info!("MQTT broker: {}:{}", mqtt_host, mqtt_port);
+    info!("MQTT brokers ({}): {}", mqtt_broker_count, mqtt_summary.join(", "));
 
     HttpServer::new(move || {
         App::new()
@@ -626,6 +702,7 @@ async fn main() -> std::io::Result<()> {
             .configure(api::configure_routes)
             .route("/ws", web::get().to(ws::ws_index))
             .route("/", web::get().to(index_with_panels))
+            .route("/brokers", web::get().to(brokers_page))
             .service(Files::new("/", "static").index_file("index.html"))
     })
     .bind("0.0.0.0:8080")?
@@ -661,6 +738,16 @@ async fn index_with_panels(state: web::Data<api::AppState>) -> actix_web::HttpRe
         .body(html)
 }
 
+/// GET /brokers — страница настроек MQTT брокеров (static/brokers.html)
+async fn brokers_page() -> actix_web::HttpResponse {
+    match tokio::fs::read_to_string("static/brokers.html").await {
+        Ok(h) => actix_web::HttpResponse::Ok()
+            .content_type("text/html; charset=utf-8")
+            .body(h),
+        Err(_) => actix_web::HttpResponse::InternalServerError().body("brokers.html not found"),
+    }
+}
+
 async fn run_generators(
     generators: Arc<Mutex<Vec<GeneratorConfig>>>,
     current_signals: Arc<Mutex<Vec<Vec<models::FlatEntry>>>>,
@@ -668,7 +755,8 @@ async fn run_generators(
         Mutex<std::collections::HashMap<String, std::collections::VecDeque<(i64, f64)>>>,
     >,
     last_values: Arc<Mutex<std::collections::HashMap<String, f64>>>,
-    mqtt: Arc<mqtt_client::MqttHandle>,
+    mqtt: Arc<mqtt_client::MqttManager>,
+    global_speed: Arc<Mutex<f64>>,
     rx: &mut tokio::sync::broadcast::Receiver<String>,
 ) {
     let mut handles: Vec<(String, tokio::task::JoinHandle<()>)> = Vec::new();
@@ -723,8 +811,9 @@ async fn run_generators(
                 let history = signal_history.clone();
                 let last = last_values.clone();
                 let mqtt = mqtt.clone();
+                let speed = global_speed.clone();
                 let handle = tokio::spawn(async move {
-                    run_single_generator(gen_cfg, signals, history, last, mqtt).await;
+                    run_single_generator(gen_cfg, signals, history, last, mqtt, speed).await;
                 });
                 handles.push((gen_id, handle));
             }
@@ -751,11 +840,13 @@ async fn run_single_generator(
         Mutex<std::collections::HashMap<String, std::collections::VecDeque<(i64, f64)>>>,
     >,
     last_values: Arc<Mutex<std::collections::HashMap<String, f64>>>,
-    mqtt: Arc<mqtt_client::MqttHandle>,
+    mqtt: Arc<mqtt_client::MqttManager>,
+    global_speed: Arc<Mutex<f64>>,
 ) {
     let topic = config.topic.clone();
     let id = config.id.clone();
-    let interval = Duration::from_millis(config.interval_ms);
+    let catalog = config.catalog.clone();
+    let base_interval = Duration::from_millis(config.interval_ms);
     let state = GeneratorState::new(config);
 
     info!("Generator started: {} -> {} | wave={} drift={} spike={} noise={} deadband={} hysteresis={} stuck={} jitter={} trend={} drop={} degrade={}",
@@ -782,7 +873,12 @@ async fn run_single_generator(
                 1.0
             }
         };
-        let actual_interval = interval.mul_f64(jitter_factor.max(0.1));
+        // Глобальный множитель частоты (скорость) для всех генераторов:
+        // эффективный интервал = базовый интервал / speed (speed>1 = быстрее)
+        let speed = *global_speed.lock().await;
+        let eff_ms = (base_interval.as_millis() as f64 / speed.max(0.01)).clamp(10.0, 3_600_000.0);
+        let real_interval = Duration::from_millis(eff_ms as u64);
+        let actual_interval = real_interval.mul_f64(jitter_factor.max(0.1));
 
         // Стабильный тик: публикация в фиксированные моменты без накопления задержки
         if !first {
@@ -805,12 +901,34 @@ async fn run_single_generator(
         if let Some(val) = value {
             // Запоминаем значение как источник для коррелированных генераторов
             last_values.lock().await.insert(id.clone(), val);
-            let (quality, cfg) = {
+            let (quality, cfg, status) = {
                 let s = state.lock().await;
-                (s.quality(), s.config.clone())
+                (s.quality(), s.config.clone(), s.status(val))
+            };
+            let status_str = match status {
+                generator::SignalStatus::Ok => "ok",
+                generator::SignalStatus::Warning => "warning",
+                generator::SignalStatus::Alarm => "alarm",
             };
 
-            let signal = if cfg.modbus_addr > 0 {
+            let signal = if cfg.payload_format == PayloadFormat::Records {
+                // Формат BlueTraktor/УСЕПИ: массив записей.
+                // @id записи значения = последний сегмент топика генератора.
+                let rec_topic = if cfg.topic.is_empty() {
+                    id.clone()
+                } else {
+                    cfg.topic.clone()
+                };
+                models::build_records_signal_num(
+                    &rec_topic,
+                    &cfg.name,
+                    val,
+                    &cfg.unit,
+                    cfg.min,
+                    cfg.max,
+                    quality,
+                )
+            } else if cfg.modbus_addr > 0 {
                 models::build_modbus_signal(
                     &id,
                     &cfg.name,
@@ -819,6 +937,11 @@ async fn run_single_generator(
                     cfg.min,
                     cfg.max,
                     quality,
+                    cfg.warn_min.unwrap_or(0.0),
+                    cfg.warn_max.unwrap_or(0.0),
+                    cfg.alarm_min.unwrap_or(0.0),
+                    cfg.alarm_max.unwrap_or(0.0),
+                    status_str,
                     cfg.modbus_addr,
                     cfg.modbus_fn,
                     cfg.modbus_type,
@@ -826,7 +949,20 @@ async fn run_single_generator(
                     cfg.modbus_slave,
                 )
             } else {
-                models::build_signal(&id, &cfg.name, val, &cfg.unit, cfg.min, cfg.max, quality)
+                models::build_signal(
+                    &id,
+                    &cfg.name,
+                    val,
+                    &cfg.unit,
+                    cfg.min,
+                    cfg.max,
+                    quality,
+                    cfg.warn_min.unwrap_or(0.0),
+                    cfg.warn_max.unwrap_or(0.0),
+                    cfg.alarm_min.unwrap_or(0.0),
+                    cfg.alarm_max.unwrap_or(0.0),
+                    status_str,
+                )
             };
 
             // Сохраняем текущее значение (весь массив)
@@ -852,13 +988,25 @@ async fn run_single_generator(
                 }
             }
 
-            // Публикуем в MQTT с таймаутом (5 сек), чтобы генератор не зависал
-            let publish = mqtt.publish(&topic, &signal);
-            match tokio::time::timeout(Duration::from_secs(5), publish).await {
-                Ok(Ok(_)) => {}
-                Ok(Err(e)) => log::warn!("MQTT publish failed for {}: {}", id, e),
-                Err(_) => log::warn!("MQTT publish timeout for {} (broker slow)", id),
-            }
+            // Публикуем во ВСЕ включённые брокеры ПАРАЛЛЕЛЬНО (с таймаутом 5 сек)
+            let sig = signal.clone();
+            let mqtt_c = mqtt.clone();
+            let catalog_c = catalog.clone();
+            let id_c = id.clone();
+            // Явный topic генератора имеет приоритет (топики схемы пакета вида
+            // USEPI/REFINERY-ORG/.../measurement/<параметр> не выражаются парой prefix+catalog+id).
+            let explicit_c = cfg.topic.trim().to_string();
+            let publish = async move {
+                if explicit_c.is_empty() {
+                    mqtt_c.publish_catalog(&catalog_c, &id_c, &sig).await
+                } else {
+                    mqtt_c.publish_catalog_explicit(&catalog_c, &id_c, Some(&explicit_c), &sig).await
+                }
+            };
+            // короткий таймаут: при перегрузке брокера лучше потерять один отсчёт, чем застопорить тик генератора
+            // Неблокирующая публикация: тик генератора не должен ждать брокер,
+            // иначе интервал превращается в «интервал + время публикации».
+            tokio::spawn(async move { let _ = publish.await; });
         } else {
             log::debug!("Generator {}: packet dropped (simulated)", id);
         }

@@ -2,6 +2,14 @@ use crate::config::{GeneratorConfig, WaveType};
 use rand::Rng;
 use std::time::Instant;
 
+/// Статус сигнала по порогам измерения (alarm/warning/ok/stuck)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SignalStatus {
+    Ok,
+    Warning,
+    Alarm,
+}
+
 /// Состояние генератора: конфиг + runtime-переменные для эффектов
 #[derive(Debug, Clone)]
 pub struct GeneratorState {
@@ -31,6 +39,12 @@ pub struct GeneratorState {
 
     // runtime: последнее значение мастера (для корреляции)
     master_value: Option<f64>,
+
+    // runtime: аккумулятор случайного блуждания (для RandomWalk)
+    walk_acc: f64,
+
+    // runtime: накопленное время по dt (для частоты/фазы/ramp — детерминированная симуляция)
+    time_acc: f64,
 }
 
 impl GeneratorState {
@@ -45,6 +59,8 @@ impl GeneratorState {
             effective_quality: config.quality as f64,
             noise_extra: None,
             master_value: None,
+            walk_acc: 0.0,
+            time_acc: 0.0,
             config,
         }
     }
@@ -62,6 +78,8 @@ impl GeneratorState {
         self.effective_quality = self.config.quality as f64;
         self.noise_extra = None;
         self.master_value = None;
+        self.walk_acc = 0.0;
+        self.time_acc = 0.0;
     }
 
     /// Установить последнее значение мастера (для коррелированных генераторов)
@@ -112,8 +130,16 @@ impl GeneratorState {
         }
 
         // === Базовое значение волны ===
-        let elapsed = self.started_at.elapsed().as_secs_f64();
-        let wave = wave_part(cfg, elapsed, &mut rng, &mut self.noise_extra);
+        // Время для волны считаем как НАКОПЛЕННОЕ by dt (детерминированная симуляция),
+        // а не по реальному started_at.elapsed() — иначе низкочастотные волны/ramp «стоят».
+        self.time_acc += dt;
+        let wave = wave_part(
+            cfg,
+            self.time_acc,
+            &mut rng,
+            &mut self.noise_extra,
+            &mut self.walk_acc,
+        );
         let base_value = match (&cfg.correlation, self.master_value) {
             // Корреляция: база = master × factor + offset + собственная волна/дрейф
             (Some(corr), Some(mv)) => mv * corr.factor + corr.offset + self.drift_acc + wave,
@@ -197,6 +223,24 @@ impl GeneratorState {
         (self.effective_quality.round() as u8).min(100)
     }
 
+    /// Статус сигнала по порогам измерения/тревог.
+    /// Возвращает "ok" | "warning" | "alarm" (приоритет alarm > warning > ok).
+    /// Порог считается ЗАДАННЫМ, только если Some (None = не задан).
+    pub fn status(&self, current: f64) -> SignalStatus {
+        let cfg = &self.config;
+        let below_alarm = cfg.alarm_min.map(|v| current < v).unwrap_or(false);
+        let above_alarm = cfg.alarm_max.map(|v| current > v).unwrap_or(false);
+        let below_warn = cfg.warn_min.map(|v| current < v).unwrap_or(false);
+        let above_warn = cfg.warn_max.map(|v| current > v).unwrap_or(false);
+        if (below_alarm || above_alarm) || self.is_stuck() {
+            SignalStatus::Alarm
+        } else if below_warn || above_warn {
+            SignalStatus::Warning
+        } else {
+            SignalStatus::Ok
+        }
+    }
+
     /// Флаг: залип ли генератор
     #[allow(dead_code)]
     pub fn is_stuck(&self) -> bool {
@@ -211,22 +255,67 @@ fn wave_part(
     elapsed: f64,
     rng: &mut impl Rng,
     noise_extra: &mut Option<f64>,
+    walk_acc: &mut f64,
 ) -> f64 {
+    use std::f64::consts::PI;
+    let phase = cfg.phase_deg.to_radians();
     match cfg.wave_type {
         WaveType::Sine => {
-            cfg.amplitude * (2.0 * std::f64::consts::PI * cfg.frequency * elapsed).sin()
+            cfg.amplitude * (2.0 * PI * cfg.frequency * elapsed + phase).sin()
         }
         WaveType::Sawtooth => {
-            let phase = (elapsed * cfg.frequency) % 1.0;
-            cfg.amplitude * (2.0 * phase - 1.0)
+            let p = (elapsed * cfg.frequency + phase / (2.0 * PI)) % 1.0;
+            cfg.amplitude * (2.0 * p - 1.0)
         }
         WaveType::Square => {
-            let phase = (elapsed * cfg.frequency) % 1.0;
-            if phase < 0.5 {
+            let p = (elapsed * cfg.frequency + phase / (2.0 * PI)) % 1.0;
+            if p < 0.5 {
                 cfg.amplitude
             } else {
                 -cfg.amplitude
             }
+        }
+        WaveType::Triangle => {
+            let p = (elapsed * cfg.frequency + phase / (2.0 * PI)) % 1.0;
+            // 0..0.5 от -1 к +1, 0.5..1 от +1 к -1
+            if p < 0.5 {
+                cfg.amplitude * (4.0 * p - 1.0)
+            } else {
+                cfg.amplitude * (3.0 - 4.0 * p)
+            }
+        }
+        WaveType::Pulse => {
+            let p = (elapsed * cfg.frequency + phase / (2.0 * PI)) % 1.0;
+            let duty = cfg.duty_cycle.clamp(0.01, 0.99);
+            if p < duty {
+                cfg.amplitude
+            } else {
+                -cfg.amplitude
+            }
+        }
+        WaveType::Ramp => {
+            // линейный ход: 0..step_period нарастает от -amp к +amp, потом спад
+            let period = cfg.step_period.max(0.01);
+            let p = (elapsed + phase / (2.0 * PI)) % (2.0 * period);
+            if p < period {
+                cfg.amplitude * (2.0 * (p / period) - 1.0)
+            } else {
+                cfg.amplitude * (3.0 - 2.0 * (p / period))
+            }
+        }
+        WaveType::RandomWalk => {
+            *walk_acc += cfg.walk_sigma * cfg.amplitude.max(1.0) * (2.0 * rng.gen::<f64>() - 1.0);
+            *walk_acc
+        }
+        WaveType::DoubleSine => {
+            let f2 = if cfg.secondary_frequency > 0.0 {
+                cfg.secondary_frequency
+            } else {
+                cfg.frequency * 1.5
+            };
+            cfg.amplitude
+                * (2.0 * PI * cfg.frequency * elapsed + phase).sin()
+                + cfg.amplitude * 0.3 * (2.0 * PI * f2 * elapsed).sin()
         }
         WaveType::Noise => {
             // Box-Muller с запоминанием второго значения
@@ -235,8 +324,8 @@ fn wave_part(
             } else {
                 let u1: f64 = rng.gen();
                 let u2: f64 = rng.gen();
-                let n1 = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
-                let n2 = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).sin();
+                let n1 = (-2.0 * u1.ln()).sqrt() * (2.0 * PI * u2).cos();
+                let n2 = (-2.0 * u1.ln()).sqrt() * (2.0 * PI * u2).sin();
                 *noise_extra = Some(n2);
                 n1
             };
@@ -394,5 +483,106 @@ mod tests {
         state.set_master(Some(500.0)); // мастер вырос
         let v2 = state.next_value(Some(0.01)).unwrap();
         assert!(v2 > v1, "Slave should follow master: {} -> {}", v1, v2);
+    }
+
+    #[test]
+    fn test_triangle_wave_stays_in_range() {
+        let mut cfg = base_cfg();
+        cfg.wave_type = WaveType::Triangle;
+        cfg.amplitude = 10.0;
+        cfg.noise_amp = 0.0;
+        cfg.spike_prob = 0.0;
+        cfg.drop_prob = 0.0;
+        cfg.drift = 0.0;
+        let mut state = GeneratorState::new(cfg);
+        for _ in 0..200 {
+            let v = state.next_value(Some(0.02)).unwrap();
+            assert!(v.abs() <= 10.001, "Triangle out of range: {}", v);
+        }
+    }
+
+    #[test]
+    fn test_pulse_duty_cycle() {
+        let mut cfg = base_cfg();
+        cfg.wave_type = WaveType::Pulse;
+        cfg.amplitude = 10.0;
+        cfg.frequency = 1.0;
+        cfg.duty_cycle = 0.5;
+        cfg.noise_amp = 0.0;
+        cfg.spike_prob = 0.0;
+        cfg.drop_prob = 0.0;
+        let mut state = GeneratorState::new(cfg);
+        let mut saw_high = false;
+        let mut saw_low = false;
+        for _ in 0..200 {
+            let v = state.next_value(Some(0.01)).unwrap();
+            if v > 5.0 {
+                saw_high = true;
+            }
+            if v < -5.0 {
+                saw_low = true;
+            }
+        }
+        assert!(saw_high && saw_low, "Pulse should toggle high/low");
+    }
+
+    #[test]
+    fn test_double_sine_in_range() {
+        let mut cfg = base_cfg();
+        cfg.wave_type = WaveType::DoubleSine;
+        cfg.amplitude = 5.0;
+        cfg.secondary_frequency = 0.3;
+        cfg.noise_amp = 0.0;
+        cfg.spike_prob = 0.0;
+        cfg.drop_prob = 0.0;
+        cfg.drift = 0.0;
+        let mut state = GeneratorState::new(cfg);
+        for _ in 0..200 {
+            // амплитуда + 0.3*амплитуда = до 1.3*amp = 6.5 + клиппинг min/max
+            let v = state.next_value(Some(0.02)).unwrap();
+            assert!(v.abs() <= 10.001, "DoubleSine out of range: {}", v);
+        }
+    }
+
+    #[test]
+    fn test_ramp_changes_over_time() {
+        let mut cfg = base_cfg();
+        cfg.wave_type = WaveType::Ramp;
+        cfg.amplitude = 10.0;
+        cfg.step_period = 10.0;
+        cfg.noise_amp = 0.0;
+        cfg.spike_prob = 0.0;
+        cfg.drop_prob = 0.0;
+        cfg.drift = 0.0;
+        let mut state = GeneratorState::new(cfg);
+        let v1 = state.next_value(Some(0.5)).unwrap();
+        let v2 = state.next_value(Some(1.0)).unwrap();
+        assert!((v2 - v1).abs() > 0.1, "Ramp should move: {} -> {}", v1, v2);
+    }
+
+    #[test]
+    fn test_status_alarm_warning_ok() {
+        let mut cfg = base_cfg();
+        cfg.warn_min = Some(10.0);
+        cfg.warn_max = Some(90.0);
+        cfg.alarm_min = Some(0.0);
+        cfg.alarm_max = Some(100.0);
+        let state = GeneratorState::new(cfg);
+        // внутри нормы
+        assert_eq!(state.status(50.0), SignalStatus::Ok);
+        // warning: ниже warn_min, но выше alarm_min
+        assert_eq!(state.status(11.0), SignalStatus::Ok);
+        assert_eq!(state.status(5.0), SignalStatus::Warning);
+        // alarm: выше alarm_max / ниже alarm_min
+        assert_eq!(state.status(105.0), SignalStatus::Alarm);
+        assert_eq!(state.status(-1.0), SignalStatus::Alarm);
+    }
+
+    #[test]
+    fn test_status_none_thresholds_always_ok() {
+        let cfg = base_cfg(); // пороги None
+        let state = GeneratorState::new(cfg);
+        assert_eq!(state.status(-999.0), SignalStatus::Ok);
+        assert_eq!(state.status(999.0), SignalStatus::Ok);
     }
 }

@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Signal Generator | Cognitive Core</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='none' stroke='%23fff' stroke-width='2'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23fff' stroke-width='1' stroke-dasharray='3 3'/%3E%3Cpath d='M16 2 L16 6 M16 26 L16 30 M2 16 L6 16 M26 16 L30 16' stroke='%23fff' stroke-width='2'/%3E%3Ccircle cx='16' cy='16' r='2.5' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="/icons/icon_180.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#000000">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SigGen">
+<meta name="application-name" content="Signal Generator">
 <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@300;400;500;600&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#000;--glass:rgba(255,255,255,0.02);--border:rgba(255,255,255,0.08);--t1:#fff;--t2:rgba(255,255,255,0.5);--t3:rgba(255,255,255,0.25)}
@@ -151,6 +159,7 @@ body{background:radial-gradient(circle at 50%30%,#1a1a1a 0%,#000 70%);color:var(
 
 <div class="status-bar">
 <span><span class="mqtt-dot" id="mqttDot"></span>СИСТЕМА: <span id="sysStat">ОНЛАЙН</span></span>
+<span style="display:inline-flex;align-items:center;gap:6px"><span style="color:var(--t3)">ЧАСТОТА</span><input type="range" id="speedSlider" min="0.1" max="10" step="0.1" value="1" style="width:110px;accent-color:#fff;cursor:pointer"><span id="speedVal" style="color:var(--t1);font-weight:400;min-width:36px">1.0×</span></span>
 <span>v<span id="appVer">—</span> · ГЕНЕРАТОРОВ: <span id="genCnt">0</span> · <span id="actCnt">0</span> АКТИВНО · <span id="alarmCnt" style="color:rgba(255,80,80,0.7)">⚠ 0</span></span>
 </div>
 
@@ -198,6 +207,11 @@ body{background:radial-gradient(circle at 50%30%,#1a1a1a 0%,#000 70%);color:var(
 <option value="Noise">Noise</option>
 <option value="Random">Random</option>
 <option value="Constant">Constant</option>
+<option value="Triangle">Triangle</option>
+<option value="Pulse">Pulse</option>
+<option value="Ramp">Ramp</option>
+<option value="RandomWalk">RandomWalk</option>
+<option value="DoubleSine">DoubleSine</option>
 </select>
 <select class="panels-search" id="catalogFilter" data-catalogfilter="1" style="flex:0 0 auto;width:auto;cursor:pointer">
 <option value="">ВСЕ КАТАЛОГИ</option>
@@ -253,7 +267,7 @@ body{background:radial-gradient(circle at 50%30%,#1a1a1a 0%,#000 70%);color:var(
 <div class="form-group"><label>Имя</label><input type="text" id="fName" required placeholder="Температура"></div>
 <div class="form-group"><label>ID (topic)</label><input type="text" id="fId" placeholder="auto"></div>
 <div class="form-group"><label>Каталог</label><select id="fCatalog"><option value="">—</option><option value="temperature">Температура</option><option value="pressure">Давление</option><option value="level">Уровень</option><option value="flow">Расход</option><option value="vibration">Вибрация</option><option value="speed">Скорость</option><option value="electrical">Электрика</option><option value="water">Вода</option><option value="climate">Климат</option><option value="heating">Теплоснабжение</option><option value="valve">Клапаны</option><option value="weight">Вес</option><option value="modbus">Modbus</option><option value="agronomy">Агрономия</option><option value="livestock">Животноводство</option></select></div>
-<div class="form-group"><label>Волна</label><select id="fWaveType"><option value="Sine">Sine</option><option value="Sawtooth">Sawtooth</option><option value="Square">Square</option><option value="Noise">Noise</option><option value="Random">Random</option><option value="Constant">Constant</option></select></div>
+<div class="form-group"><label>Волна</label><select id="fWaveType"><option value="Sine">Sine</option><option value="Sawtooth">Sawtooth</option><option value="Square">Square</option><option value="Noise">Noise</option><option value="Random">Random</option><option value="Constant">Constant</option><option value="Triangle">Triangle</option><option value="Pulse">Pulse</option><option value="Ramp">Ramp</option><option value="RandomWalk">RandomWalk</option><option value="DoubleSine">DoubleSine</option></select></div>
 <div class="form-group"><label>Интервал (ms)</label><input type="number" id="fInterval" value="1000" min="10" step="10"></div>
 <div class="form-group"><label>Амплитуда</label><input type="number" id="fAmplitude" value="10" step="0.1"></div>
 <div class="form-group"><label>Смещение</label><input type="number" id="fOffset" value="0" step="0.1"></div>
@@ -292,6 +306,20 @@ body{background:radial-gradient(circle at 50%30%,#1a1a1a 0%,#000 70%);color:var(
 <div class="form-group wide"><label>Мастер (id генератора)</label><input type="text" id="fCorrMaster" placeholder="пусто = независимый"></div>
 <div class="form-group"><label>Фактор</label><input type="number" id="fCorrFactor" value="1" step="0.01"></div>
 <div class="form-group"><label>Смещение</label><input type="number" id="fCorrOffset" value="0" step="0.1"></div>
+
+<div class="section-label">ПАРАМЕТРЫ ВОЛНЫ</div>
+<div class="form-group"><label>Фазовый сдвиг (°)</label><input type="number" id="fPhaseDeg" value="0" step="1" min="0" max="360"></div>
+<div class="form-group"><label>Duty cycle (0..1)</label><input type="number" id="fDutyCycle" value="0.5" step="0.01" min="0" max="1"></div>
+<div class="form-group"><label>Walk sigma</label><input type="number" id="fWalkSigma" value="0.1" step="0.01" min="0"></div>
+<div class="form-group"><label>Шаг нараст. (сек)</label><input type="number" id="fStepPeriod" value="10" step="0.1" min="0.1"></div>
+<div class="form-group"><label>2-я частота (биения)</label><input type="number" id="fSecondaryFreq" value="0" step="0.01" min="0"></div>
+
+<div class="section-label">ПРЕДЕЛЫ И ПОРОГИ ТРЕВОГ</div>
+<div class="form-group"><label>Предупр. мин</label><input type="number" id="fWarnMin" placeholder="пусто = нет" step="0.1"></div>
+<div class="form-group"><label>Предупр. макс</label><input type="number" id="fWarnMax" placeholder="пусто = нет" step="0.1"></div>
+<div class="form-group"><label>Авария мин</label><input type="number" id="fAlarmMin" placeholder="пусто = нет" step="0.1"></div>
+<div class="form-group"><label>Авария макс</label><input type="number" id="fAlarmMax" placeholder="пусто = нет" step="0.1"></div>
+<div class="form-group full" style="color:var(--t3);font-family:JetBrains Mono,monospace;font-size:9px">Пороги тревог (warning/alarm) подсвечивают панель и попадают в счётчик тревог статус-бара. Пусто = порог не задан. Мин/Макс измерения — поля «Мин»/«Макс» выше.</div>
 
 <div class="section-label">MODBUS</div>
 <div class="form-group"><label>Адрес регистра</label><input type="number" id="fMbAddr" value="0" min="0" max="65535"></div>
@@ -357,5 +385,6 @@ body{background:radial-gradient(circle at 50%30%,#1a1a1a 0%,#000 70%);color:var(
 </div></div>
 
 <script src="/app.js"></script>
+<script src="/pwa-register.js"></script>
 </body>
 </html>

@@ -1,0 +1,19 @@
+{
+  "name": "Signal Generator — Cognitive Core",
+  "short_name": "SigGen",
+  "description": "Промышленный генератор сигналов: публикация в MQTT, живые панели, осциллограф, активность брокера.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "lang": "ru",
+  "categories": ["utilities", "industrial", "monitoring"],
+  "icons": [
+    { "src": "/icons/icon_192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon_512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon_512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

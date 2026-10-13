@@ -1,3 +1,4 @@
+use crate::config::BrokerConfig;
 use log::{info, warn};
 use rumqttc::{AsyncClient, Event, MqttOptions, Packet, QoS, TlsConfiguration, Transport};
 use serde::Serialize;
@@ -17,14 +18,6 @@ fn tls_transport() -> Transport {
         .with_root_certificates(roots)
         .with_no_client_auth();
     Transport::Tls(TlsConfiguration::Rustls(Arc::new(config)))
-}
-
-/// MQTT клиент для публикации сигналов + $SYS мониторинг
-pub struct MqttHandle {
-    client: Arc<Mutex<AsyncClient>>,
-    connected: Arc<std::sync::atomic::AtomicBool>,
-    broker_status: Arc<Mutex<BrokerStatus>>,
-    broker_history: Arc<Mutex<BrokerHistory>>,
 }
 
 /// Расширенный статус брокера
@@ -213,21 +206,23 @@ impl BrokerHistory {
     pub fn snapshot(&self) -> Vec<BrokerSnapshot> {
         self.buffer.clone()
     }
-
-    /// Текущие скорости (для быстрого доступа)
-    #[allow(dead_code)]
-    pub fn current_rates(&self) -> (f64, f64) {
-        self.buffer
-            .last()
-            .map(|s| (s.msg_rate, s.byte_rate))
-            .unwrap_or((0.0, 0.0))
-    }
 }
 
-impl MqttHandle {
-    pub async fn connect(cfg: &crate::config::MqttConfig, client_id: &str) -> Self {
+/// Один подключённый брокер: клиент + его статус + история.
+/// Обёрнут в Arc, чтобы сервисы могли его клонировать (требование JoinSet).
+pub struct BrokerConnection {
+    pub config: BrokerConfig,
+    client: Arc<Mutex<AsyncClient>>,
+    connected: Arc<std::sync::atomic::AtomicBool>,
+    broker_status: Arc<Mutex<BrokerStatus>>,
+    broker_history: Arc<Mutex<BrokerHistory>>,
+}
+
+impl BrokerConnection {
+    /// Создать клиент к брокеру и запустить eventloop (подписка $SYS, статус, история)
+    async fn connect(cfg: BrokerConfig, client_id: &str) -> Arc<Self> {
         let mut mqttopts = MqttOptions::new(client_id, &cfg.host, cfg.port);
-        mqttopts.set_keep_alive(Duration::from_secs(30));
+        mqttopts.set_keep_alive(Duration::from_secs(120));
         mqttopts.set_clean_session(true);
         if !cfg.username.is_empty() {
             mqttopts.set_credentials(&cfg.username, &cfg.password);
@@ -246,7 +241,7 @@ impl MqttHandle {
             ),
         );
 
-        let (client, mut eventloop) = AsyncClient::new(mqttopts, 100);
+        let (client, mut eventloop) = AsyncClient::new(mqttopts, 5000);
         let client = Arc::new(Mutex::new(client));
         let connected = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let connected_clone = connected.clone();
@@ -259,18 +254,20 @@ impl MqttHandle {
         {
             let c = client.lock().await;
             if let Err(e) = c.subscribe("$SYS/#", QoS::AtMostOnce).await {
-                warn!("Failed to subscribe to $SYS/#: {:?}", e);
+                warn!("Failed to subscribe $SYS/# on {}: {:?}", cfg.host, e);
             }
         }
 
         // Фоновая задача: обработка событий MQTT
+        let host = cfg.host.clone();
+        let port = cfg.port;
         tokio::spawn(async move {
             let mut last_record = Instant::now();
             loop {
                 match eventloop.poll().await {
                     Ok(Event::Incoming(Packet::ConnAck(_))) => {
                         connected_clone.store(true, std::sync::atomic::Ordering::SeqCst);
-                        info!("MQTT connected to broker");
+                        info!("MQTT connected to broker {}:{}", host, port);
                     }
                     Ok(Event::Incoming(Packet::Publish(pub_))) => {
                         let topic = pub_.topic.clone();
@@ -284,7 +281,7 @@ impl MqttHandle {
                     Ok(Event::Outgoing(_)) => {}
                     Err(e) => {
                         connected_clone.store(false, std::sync::atomic::Ordering::SeqCst);
-                        warn!("MQTT error: {:?}", e);
+                        warn!("MQTT error on {}:{}: {:?}", host, port, e);
                         tokio::time::sleep(Duration::from_secs(5)).await;
                     }
                 }
@@ -299,44 +296,29 @@ impl MqttHandle {
             }
         });
 
-        Self {
+        Arc::new(Self {
+            config: cfg,
             client,
             connected,
             broker_status,
             broker_history,
-        }
+        })
     }
 
-    pub async fn publish(
-        &self,
-        topic: &str,
-        signal: &[crate::models::FlatEntry],
-    ) -> Result<(), String> {
-        let payload = serde_json::to_string_pretty(signal).map_err(|e| e.to_string())?;
+    async fn publish(&self, topic: &str, signal: &[crate::models::FlatEntry]) -> Result<(), String> {
+        let payload = serde_json::to_string(signal).map_err(|e| e.to_string())?;
         let client = self.client.lock().await;
+        // QoS 0 + retain. try_publish не ждёт места в очереди: при перегрузке отсчёт
+        // пропускается (следующий придёт через тик), а цикл генератора не стопорится.
         client
-            .publish(topic, QoS::AtLeastOnce, true, payload)
-            .await
-            .map_err(|e| format!("MQTT publish error: {}", e))
+            .try_publish(topic, QoS::AtMostOnce, true, payload)
+            .map_err(|e| format!("MQTT publish skipped (queue full): {}", e))
     }
 
-    pub async fn get_broker_status(&self) -> BrokerStatus {
-        self.broker_status.lock().await.clone()
-    }
-
-    pub async fn get_broker_history(&self) -> Vec<BrokerSnapshot> {
-        self.broker_history.lock().await.snapshot()
-    }
-
-    pub fn is_connected(&self) -> bool {
-        self.connected.load(std::sync::atomic::Ordering::SeqCst)
-    }
-
-    /// Пересоздать MQTT клиент с новыми настройками (для hot-reload конфига)
-    pub async fn reconnect(&self, cfg: &crate::config::MqttConfig) {
+    async fn reconnect(&self, cfg: &BrokerConfig) {
         let cfg = cfg.clone();
         let mut mqttopts = MqttOptions::new("signal-generator", &cfg.host, cfg.port);
-        mqttopts.set_keep_alive(Duration::from_secs(30));
+        mqttopts.set_keep_alive(Duration::from_secs(120));
         mqttopts.set_clean_session(true);
         if !cfg.username.is_empty() {
             mqttopts.set_credentials(&cfg.username, &cfg.password);
@@ -346,7 +328,7 @@ impl MqttHandle {
             info!("MQTT TLS enabled for {}:{}", cfg.host, cfg.port);
         }
 
-        let (client, mut eventloop) = AsyncClient::new(mqttopts, 100);
+        let (client, mut eventloop) = AsyncClient::new(mqttopts, 5000);
         // Заменяем клиент
         {
             let mut c = self.client.lock().await;
@@ -399,5 +381,248 @@ impl MqttHandle {
                 }
             }
         });
+    }
+}
+
+/// Мультиброкерный MQTT-менеджер: держит по клиенту на каждый включённый брокер
+/// и ПУБЛИКУЕТ ВСЕ СИГНАЛЫ ПАРАЛЛЕЛЬНО во все включённые брокеры.
+pub struct MqttManager {
+    connections: Arc<Mutex<Vec<Arc<BrokerConnection>>>>,
+}
+
+impl MqttManager {
+    /// Подключиться ко ВСЕМ включённым брокерам из списка
+    pub async fn connect(cfg: &crate::config::MqttConfig) -> Self {
+        let mut conns = Vec::new();
+        for broker in cfg.brokers.iter().filter(|b| b.enabled) {
+            conns.push(BrokerConnection::connect(broker.clone(), "signal-generator").await);
+        }
+        info!("MqttManager: {} broker(s) connected", conns.len());
+        Self {
+            connections: Arc::new(Mutex::new(conns)),
+        }
+    }
+
+    /// Опубликовать сигнал параллельно во все включённые брокеры.
+    /// Если у генератора задан явный `topic`, публикуем в него (одинаково во все брокеры),
+    /// иначе топик строится по префиксу брокера через topic_for_catalog.
+    /// Возвращает число успешных публикаций.
+    pub async fn publish_catalog(
+        &self,
+        catalog: &str,
+        id: &str,
+        signal: &[crate::models::FlatEntry],
+    ) -> usize {
+        self.publish_catalog_explicit(catalog, id, None, signal).await
+    }
+
+    /// То же, но с явным переопределением топика (`Some(непустой)` = публикуем как задано).
+    pub async fn publish_catalog_explicit(
+        &self,
+        catalog: &str,
+        id: &str,
+        explicit_topic: Option<&str>,
+        signal: &[crate::models::FlatEntry],
+    ) -> usize {
+        let conns = self.connections.lock().await;
+        if conns.is_empty() {
+            return 0;
+        }
+        let mut set = tokio::task::JoinSet::new();
+        let explicit = explicit_topic.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+        for conn in conns.iter() {
+            let topic = match &explicit {
+                Some(t) => t.clone(),
+                None => conn.config.topic_for_catalog(catalog, id),
+            };
+            let signal_c = signal.to_vec();
+            let conn = conn.clone(); // Arc — 'static + Send
+            set.spawn(async move {
+                tokio::time::timeout(Duration::from_secs(5), conn.publish(&topic, &signal_c)).await
+            });
+        }
+        let mut published = 0usize;
+        while let Some(res) = set.join_next().await {
+            if let Ok(Ok(Ok(_))) = res {
+                published += 1;
+            }
+            // ошибка на одном брокере не роняет остальные
+        }
+        published
+    }
+
+    /// Опубликовать диагностику во все включённые брокеры (каждый на своём топике)
+    pub async fn publish_diagnostics(&self, signal: &[crate::models::FlatEntry]) -> usize {
+        let conns = self.connections.lock().await;
+        if conns.is_empty() {
+            return 0;
+        }
+        let mut set = tokio::task::JoinSet::new();
+        for conn in conns.iter() {
+            let topic = conn.config.diagnostics_topic.clone();
+            let signal_c = signal.to_vec();
+            let conn = conn.clone();
+            set.spawn(async move {
+                tokio::time::timeout(Duration::from_secs(5), conn.publish(&topic, &signal_c)).await
+            });
+        }
+        let mut published = 0usize;
+        while let Some(res) = set.join_next().await {
+            if let Ok(Ok(Ok(_))) = res {
+                published += 1;
+            }
+        }
+        published
+    }
+
+    /// Есть ли хоть один подключённый брокер
+    pub async fn any_connected(&self) -> bool {
+        let conns = self.connections.lock().await;
+        conns
+            .iter()
+            .any(|c| c.connected.load(std::sync::atomic::Ordering::SeqCst))
+    }
+
+    /// Статус брокера с ЖИВЫМИ $SYS-метриками для legacy /api/broker.
+    /// Предпочитает брокера, у которого метрики реально собраны (version ≠ «—»),
+    /// иначе фолбэк на первого подключённого.
+    pub async fn primary_status(&self) -> Option<BrokerStatus> {
+        let conns = self.connections.lock().await;
+        // 1) первый с живыми метриками
+        let mut first_live = None;
+        // 2) первый подключённый (фолбэк)
+        let mut first_any = None;
+        for c in conns.iter() {
+            let status = { c.broker_status.lock().await.clone() };
+            if first_any.is_none() {
+                first_any = Some(status.clone());
+            }
+            // «живой» = собраны $SYS-метрики (не версия-заглушка «—»)
+            if status.version != "—" && !status.version.is_empty() {
+                first_live = Some(status);
+                break;
+            }
+        }
+        first_live.or(first_any)
+    }
+
+    /// Статус брокера по id
+    pub async fn broker_status(&self, id: &str) -> Option<BrokerStatus> {
+        let conn = self
+            .connections
+            .lock()
+            .await
+            .iter()
+            .find(|c| c.config.id == id)
+            .cloned()?;
+        let status = conn.broker_status.lock().await.clone();
+        Some(status)
+    }
+
+    pub async fn broker_history(&self, id: &str) -> Option<Vec<BrokerSnapshot>> {
+        let conn = self
+            .connections
+            .lock()
+            .await
+            .iter()
+            .find(|c| c.config.id == id)
+            .cloned()?;
+        let history = conn.broker_history.lock().await.snapshot();
+        Some(history)
+    }
+
+    /// Список брокеров с живым статусом (для /api/brokers/status)
+    pub async fn statuses(&self) -> Vec<serde_json::Value> {
+        let conns = self.connections.lock().await;
+        let mut out = Vec::new();
+        for c in conns.iter() {
+            let st = c.broker_status.lock().await;
+            let msg_rate = st.messages_sent; // база для истории
+            out.push(serde_json::json!({
+                "id": c.config.id,
+                "name": c.config.name,
+                "host": c.config.host,
+                "port": c.config.port,
+                "topics": c.config.topic_prefix,
+                "connected": c.connected.load(std::sync::atomic::Ordering::SeqCst),
+                "version": st.version,
+                "clients": st.clients_connected,
+                "subs": st.subscriptions,
+                "topics_count": st.topics,
+                "messages_sent": msg_rate,
+                "last_update": st.last_update,
+            }));
+        }
+        out
+    }
+
+    /// Добавить брокер (создать соединение)
+    pub async fn add_broker(&self, cfg: &BrokerConfig) {
+        let conn = BrokerConnection::connect(cfg.clone(), "signal-generator").await;
+        self.connections.lock().await.push(conn);
+    }
+
+    /// Удалить брокер по id
+    #[allow(dead_code)]
+    pub async fn remove_broker(&self, id: &str) -> bool {
+        let mut conns = self.connections.lock().await;
+        let before = conns.len();
+        conns.retain(|c| c.config.id != id);
+        conns.len() != before
+    }
+
+    /// Переподключить брокер по id с новым конфигом (или создать, если нет)
+    #[allow(dead_code)]
+    pub async fn upsert_broker(&self, cfg: &BrokerConfig) {
+        let conns = self.connections.lock().await;
+        if let Some(conn) = conns.iter().find(|c| c.config.id == cfg.id) {
+            conn.reconnect(cfg).await;
+        } else {
+            drop(conns);
+            self.add_broker(cfg).await;
+        }
+    }
+
+    /// Заменить весь набор брокеров (после правок списка).
+    /// Включённые — пересоздаём/переподключаем; отключённые/удалённые — убираем.
+    pub async fn sync_brokers(&self, brokers: &[BrokerConfig]) {
+        let enabled: Vec<&BrokerConfig> = brokers.iter().filter(|b| b.enabled).collect();
+        let desired_ids: Vec<String> = enabled.iter().map(|b| b.id.clone()).collect();
+
+        // Убираем те, которых больше нет среди включённых
+        {
+            let mut conns = self.connections.lock().await;
+            conns.retain(|c| desired_ids.contains(&c.config.id));
+        }
+
+        // Для существующих — проверяем изменение конфига
+        for b in &enabled {
+            let exists = {
+                let conns = self.connections.lock().await;
+                conns.iter().any(|c| c.config.id == b.id)
+            };
+            if exists {
+                let conns = self.connections.lock().await;
+                let conn = conns.iter().find(|c| c.config.id == b.id).unwrap();
+                if !conn.config_eq(b) {
+                    conn.reconnect(b).await;
+                }
+                drop(conns);
+            } else {
+                self.add_broker(b).await;
+            }
+        }
+    }
+}
+
+impl BrokerConnection {
+    fn config_eq(&self, other: &BrokerConfig) -> bool {
+        self.config.host == other.host
+            && self.config.port == other.port
+            && self.config.username == other.username
+            && self.config.password == other.password
+            && self.config.use_tls == other.use_tls
+            && self.config.topic_prefix == other.topic_prefix
+            && self.config.diagnostics_topic == other.diagnostics_topic
     }
 }

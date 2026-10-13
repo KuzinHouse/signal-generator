@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>MQTT Брокеры | Signal Generator</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='none' stroke='%23fff' stroke-width='2'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23fff' stroke-width='1' stroke-dasharray='3 3'/%3E%3Cpath d='M16 2 L16 6 M16 26 L16 30 M2 16 L6 16 M26 16 L30 16' stroke='%23fff' stroke-width='2'/%3E%3Ccircle cx='16' cy='16' r='2.5' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@300;400;500;600&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#000;--glass:rgba(255,255,255,0.02);--border:rgba(255,255,255,0.08);--t1:#fff;--t2:rgba(255,255,255,0.5);--t3:rgba(255,255,255,0.25)}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-font-smoothing:antialiased}
+body{background:radial-gradient(circle at 50%30%,#1a1a1a 0%,#000 70%);color:var(--t1);font-family:'Exo 2',sans-serif;min-height:100vh;overflow-x:hidden;padding:clamp(10px,1.8vw,28px)}
+.bg-radar{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:90vmax;height:90vmax;border:1px solid rgba(255,255,255,0.05);border-radius:50%;z-index:0;pointer-events:none;mask-image:radial-gradient(circle,#000 40%,transparent 80%)}
+.app{max-width:1200px;margin:0 auto;position:relative;z-index:10;display:flex;flex-direction:column;gap:clamp(12px,2vh,22px)}
+
+/* Header */
+.header{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.header-left{display:flex;align-items:center;gap:12px}
+.logo{width:34px;height:34px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;clip-path:polygon(0 0,calc(100%-8px) 0,100% 8px,100% 100%,8px 100%,0 calc(100%-8px));background:rgba(255,255,255,0.04)}
+.logo svg{width:22px;height:22px}
+h1{font-size:clamp(15px,2vw,20px);font-weight:300;letter-spacing:2px;text-transform:uppercase}
+h1 small{display:block;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:1.5px;color:var(--t3);text-transform:uppercase;margin-top:2px}
+.header-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.back-link{font-family:'JetBrains Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--t2);border:1px solid var(--border);padding:6px 12px;clip-path:polygon(0 0,calc(100%-6px) 0,100% 6px,100% 100%,6px 100%,0 calc(100%-6px));text-decoration:none;transition:.2s}
+.back-link:hover{color:#fff;border-color:rgba(255,255,255,0.3)}
+.status-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:1px solid var(--border);font-family:'JetBrains Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--t2);clip-path:polygon(0 0,calc(100%-6px) 0,100% 6px,100% 100%,6px 100%,0 calc(100%-6px))}
+.status-chip .dot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,0.3);transition:.4s}
+.status-chip.ok .dot{background:rgba(80,255,160,0.9);box-shadow:0 0 8px rgba(80,255,160,0.6)}
+.status-chip.bad .dot{background:rgba(255,80,80,0.9);box-shadow:0 0 8px rgba(255,80,80,0.6)}
+
+/* Broker cards */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:clamp(10px,1.4vw,18px)}
+.card{background:var(--glass);backdrop-filter:blur(10px);border:1px solid var(--border);padding:clamp(12px,1.4vw,18px);clip-path:polygon(0 0,calc(100%-14px) 0,100% 14px,100% 100%,14px 100%,0 calc(100%-14px));background-image:linear-gradient(135deg,rgba(255,255,255,0.05) 0%,rgba(255,255,255,0) 40%,rgba(255,255,255,0) 70%,rgba(255,255,255,0.02) 100%)}
+.card.disabled{opacity:0.45}
+.card-header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+.card-id{display:flex;align-items:center;gap:10px;min-width:0}
+.card-avatar{width:38px;height:38px;flex:0 0 38px;border:1px solid var(--border);border-radius:7px;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:12px;background:rgba(255,255,255,0.04);clip-path:polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%)}
+.card-name{font-size:14px;font-weight:400;letter-spacing:0.5px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card-name small{display:block;font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:1px}
+.toggle{position:relative;display:inline-block;width:36px;height:18px;cursor:pointer;flex:0 0 36px}
+.toggle input{opacity:0;width:0;height:0}
+.toggle-slider{position:absolute;inset:0;background:rgba(255,255,255,0.1);border-radius:9px;transition:.3s}
+.toggle-slider::before{content:'';position:absolute;width:12px;height:12px;left:3px;bottom:3px;background:var(--t3);border-radius:50%;transition:.3s}
+.toggle input:checked+.toggle-slider{background:rgba(80,255,160,0.25)}
+.toggle input:checked+.toggle-slider::before{transform:translateX(18px);background:#fff}
+
+.card-body{display:flex;flex-direction:column;gap:7px}
+.addr-row{display:flex;align-items:center;gap:8px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--t2)}
+.addr-row .proto{width:34px;flex:0 0 34px;text-align:center;font-size:9px;padding:2px 0;border:1px solid var(--border);color:var(--t3)}
+.addr-row .val{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.meta-row{display:flex;gap:8px;flex-wrap:wrap}
+.meta{font-family:'JetBrains Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:0.5px;color:var(--t3);padding:2px 6px;border:1px solid var(--border);background:rgba(255,255,255,0.02)}
+.meta.good{color:rgba(80,255,160,0.85);border-color:rgba(80,255,160,0.25)}
+.meta.warn{color:rgba(255,200,50,0.85);border-color:rgba(255,200,50,0.25)}
+.meta.bad{color:rgba(255,80,80,0.85);border-color:rgba(255,80,80,0.25)}
+.meta b{color:var(--t1);font-weight:400}
+.topic-preview{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--t3);background:rgba(0,0,0,0.4);border:1px solid rgba(255,255,255,0.03);padding:5px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.card-foot{display:flex;justify-content:flex-end;gap:6px;margin-top:12px;padding-top:10px;border-top:1px solid var(--border)}
+.btn{font-family:'JetBrains Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;padding:5px 10px;border:1px solid var(--border);background:rgba(255,255,255,0.03);color:var(--t2);cursor:pointer;transition:.2s;clip-path:polygon(0 0,calc(100%-5px) 0,100% 5px,100% 100%,5px 100%,0 calc(100%-5px))}
+.btn:hover{color:#fff;border-color:rgba(255,255,255,0.3);background:rgba(255,255,255,0.07)}
+.btn.primary{border-color:rgba(255,255,255,0.4);color:#fff;background:linear-gradient(180deg,rgba(255,255,255,0.12),rgba(255,255,255,0.03))}
+.btn.primary:hover{box-shadow:0 0 14px rgba(255,255,255,0.25)}
+.btn.danger{color:rgba(255,100,100,0.85);border-color:rgba(255,100,100,0.2)}
+.btn.danger:hover{background:rgba(255,80,80,0.12);color:#fff;border-color:rgba(255,80,80,0.4)}
+.btn.spin{opacity:0.5;pointer-events:none}
+
+/* Add block */
+.add-block{background:var(--glass);backdrop-filter:blur(10px);border:1px dashed rgba(255,255,255,0.18);padding:clamp(14px,1.6vw,20px);clip-path:polygon(0 0,calc(100%-14px) 0,100% 14px,100% 100%,14px 100%,0 calc(100%-14px))}
+.add-block h2{font-size:13px;font-weight:400;letter-spacing:2px;text-transform:uppercase;color:var(--t2);margin-bottom:12px}
+
+/* Empty */
+.empty{text-align:center;padding:40px 0;color:var(--t3);font-family:'JetBrains Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:1px}
+
+/* Modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.85);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;z-index:100;opacity:0;pointer-events:none;transition:.3s}
+.modal-overlay.open{opacity:1;pointer-events:auto}
+.modal{background:#0a0a0a;border:1px solid var(--border);width:min(600px,95vw);max-height:88vh;overflow-y:auto;clip-path:polygon(0 0,calc(100%-18px) 0,100% 18px,100% 100%,18px 100%,0 calc(100%-18px))}
+.modal-header{display:flex;justify-content:space-between;align-items:center;padding:clamp(12px,1.5vw,18px);border-bottom:1px solid var(--border)}
+.modal-header h2{font-family:'Exo 2',sans-serif;font-weight:300;font-size:15px;text-transform:uppercase;letter-spacing:1px}
+.btn-close{background:none;border:none;color:var(--t3);font-size:20px;cursor:pointer;transition:.2s}
+.btn-close:hover{color:#fff}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:clamp(8px,1vw,14px);padding:clamp(12px,1.5vw,18px)}
+.form-group{display:flex;flex-direction:column;gap:4px}
+.form-group.full{grid-column:1/-1}
+.form-group label{font-family:'JetBrains Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:0.5px;color:var(--t3)}
+.form-group input,.form-group select{background:rgba(255,255,255,0.04);color:var(--t1);border:1px solid var(--border);padding:6px 9px;font-family:'JetBrains Mono',monospace;font-size:12px;outline:none}
+.form-group input:focus,.form-group select:focus{border-color:rgba(255,255,255,0.3)}
+.form-group select option{background:#111}
+.form-group input[type=checkbox]{width:auto}
+.section-label{grid-column:1/-1;font-family:'JetBrains Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--t3);border-bottom:1px solid var(--border);padding-bottom:5px;margin-top:6px}
+.modal-footer{display:flex;justify-content:flex-end;gap:8px;padding:clamp(10px,1.2vw,16px);border-top:1px solid var(--border)}
+.test-result{grid-column:1/-1;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--t3)}
+.test-result.good{color:rgba(80,255,160,0.9)}
+.test-result.bad{color:rgba(255,80,80,0.9)}
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:2px}
+@media(max-width:520px){.cards{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}.modal{width:95vw}}
+</style>
+</head>
+<body>
+<div class="bg-radar"></div>
+<div class="app">
+  <header class="header">
+    <div class="header-left">
+      <div class="logo"><svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="12" fill="none" stroke="#fff" stroke-width="1.5"/><circle cx="16" cy="16" r="7" fill="none" stroke="#fff" stroke-width="1" stroke-dasharray="2 3"/><path d="M16 1 L16 5 M16 27 L16 31 M1 16 L5 16 M27 16 L31 16" stroke="#fff" stroke-width="1.5"/></svg></div>
+      <h1>MQTT Брокеры<small>Parallel publication · Signal Generator</small></h1>
+    </div>
+    <div class="header-right">
+      <span class="status-chip" id="topStatus"><span class="dot"></span><span id="topStatusText">—</span></span>
+      <a class="back-link" href="/">← На главную</a>
+    </div>
+  </header>
+
+  <div class="cards" id="cards"></div>
+
+  <div class="add-block">
+    <h2>Добавить брокер</h2>
+    <button class="btn primary" data-action="open-modal">+ НОВЫЙ БРОКЕР</button>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modalOverlay" data-action="close-modal">
+  <div class="modal" data-stop="1">
+    <div class="modal-header"><h2 id="modalTitle">НОВЫЙ БРОКЕР</h2><button class="btn-close" data-action="close-modal">&times;</button></div>
+    <form id="brokerForm">
+      <input type="hidden" id="editId">
+      <div class="form-grid">
+        <div class="section-label">ОСНОВНЫЕ</div>
+        <div class="form-group"><label>Название</label><input type="text" id="fName" placeholder="Локальный EMQX"></div>
+        <div class="form-group"><label>ID (фраза)</label><input type="text" id="fId" placeholder="local"></div>
+        <div class="form-group"><label>Хост</label><input type="text" id="fHost" required placeholder="127.0.0.1"></div>
+        <div class="form-group"><label>Порт</label><input type="number" id="fPort" value="1883" min="1" max="65535"></div>
+        <div class="form-group"><label>Префикс топиков</label><input type="text" id="fPrefix" value="USEPI"></div>
+        <div class="form-group"><label>Топик диагностики</label><input type="text" id="fDiag" value="USEPI/diagnostics"></div>
+        <div class="form-group"><label>Включён</label><input type="checkbox" id="fEnabled" checked></div>
+        <div class="form-group"><label>TLS</label><input type="checkbox" id="fTls"></div>
+        <div class="section-label">АВТОРИЗАЦИЯ</div>
+        <div class="form-group"><label>Пользователь</label><input type="text" id="fUser" placeholder="(пусто = без auth)"></div>
+        <div class="form-group"><label>Пароль</label><input type="password" id="fPass" placeholder="(пусто = без auth)"></div>
+        <div class="form-group full"><label class="test-result" id="testResult">&nbsp;</label></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" data-action="test-broker" id="testBtn">ПРОВЕРИТЬ</button>
+        <button type="button" class="btn danger" data-action="close-modal">ОТМЕНА</button>
+        <button type="submit" class="btn primary" id="modalSubmit">СОХРАНИТЬ</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="/brokers.js"></script>
+</body>
+</html>

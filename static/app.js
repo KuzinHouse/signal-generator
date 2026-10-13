@@ -42,6 +42,7 @@ async function handleImportFile(file){
   }
 }
 function rnd(v,d){return typeof v==='number'?parseFloat(v.toFixed(d||4)):v}
+function optNum(v){return (v===''||v===null||v===undefined)?null:parseFloat(v)}
 function fmtBytes(b){if(!b||b<1)return'0';if(b<1024)return b+'B';if(b<1048576)return(b/1024).toFixed(0)+'KB';return(b/1048576).toFixed(0)+'MB'}
 
 async function api(p,o={},timeout=5000){
@@ -236,6 +237,13 @@ function editGen(id){
   s('fCorrMaster').value=g.correlation?g.correlation.masterId:'';
   s('fCorrFactor').value=rnd(g.correlation?g.correlation.factor:1.0);
   s('fCorrOffset').value=rnd(g.correlation?g.correlation.offset:0.0);
+  s('fPhaseDeg').value=rnd(g.phaseDeg||0);s('fDutyCycle').value=rnd(g.dutyCycle||0.5);
+  s('fWalkSigma').value=rnd(g.walkSigma||0.1);s('fStepPeriod').value=rnd(g.stepPeriod||10);
+  s('fSecondaryFreq').value=rnd(g.secondaryFrequency||0);
+  s('fWarnMin').value=(g.warnMin!==null&&g.warnMin!==undefined)?rnd(g.warnMin):'';
+  s('fWarnMax').value=(g.warnMax!==null&&g.warnMax!==undefined)?rnd(g.warnMax):'';
+  s('fAlarmMin').value=(g.alarmMin!==null&&g.alarmMin!==undefined)?rnd(g.alarmMin):'';
+  s('fAlarmMax').value=(g.alarmMax!==null&&g.alarmMax!==undefined)?rnd(g.alarmMax):'';
   s('fMbAddr').value=g.modbusAddr||0;s('fMbFn').value=g.modbusFn||0;s('fMbType').value=g.modbusType||0;
   s('fMbScale').value=rnd(g.modbusScale||1.0);s('fMbSlave').value=g.modbusSlave||1;
   s('modalOverlay').classList.add('open');
@@ -256,6 +264,15 @@ async function saveGenerator(e){
     hysteresis:+document.getElementById('fHysteresis').value,stuckProb:+document.getElementById('fStuckProb').value,
     stuckDurationMs:+document.getElementById('fStuckDur').value,jitter:+document.getElementById('fJitter').value,
     dropProb:+document.getElementById('fDropProb').value,degradationRate:+document.getElementById('fDegradation').value,
+    phaseDeg:+document.getElementById('fPhaseDeg').value||0,
+    dutyCycle:+document.getElementById('fDutyCycle').value||0.5,
+    walkSigma:+document.getElementById('fWalkSigma').value||0.1,
+    stepPeriod:+document.getElementById('fStepPeriod').value||10,
+    secondaryFrequency:+document.getElementById('fSecondaryFreq').value||0,
+    warnMin:optNum(document.getElementById('fWarnMin').value),
+    warnMax:optNum(document.getElementById('fWarnMax').value),
+    alarmMin:optNum(document.getElementById('fAlarmMin').value),
+    alarmMax:optNum(document.getElementById('fAlarmMax').value),
     modbusAddr:+document.getElementById('fMbAddr').value,modbusFn:+document.getElementById('fMbFn').value,
     modbusType:+document.getElementById('fMbType').value,modbusScale:+document.getElementById('fMbScale').value,
     modbusSlave:+document.getElementById('fMbSlave').value,
@@ -618,3 +635,24 @@ connectWs();
 // Fallback: polling, если WS недоступен
 setInterval(()=>{if(!wsOk)loadAll()},1000);
 loadAll();
+
+/* ========== глобальный слайдер частоты ========== */
+let speedTimer=null;
+function initSpeedSlider(){
+  const sl=document.getElementById('speedSlider');const sv=document.getElementById('speedVal');
+  if(!sl)return;
+  // загрузка текущего значения
+  api('/global/speed').then(d=>{
+    if(d&&typeof d.speed==='number'){sl.value=d.speed;sv.textContent=d.speed.toFixed(1)+'×'}
+  });
+  // изменение (дебаунс 300мс)
+  sl.addEventListener('input',()=>{
+    const v=parseFloat(sl.value);
+    sv.textContent=v.toFixed(1)+'×';
+    clearTimeout(speedTimer);
+    speedTimer=setTimeout(()=>{
+      api('/global/speed',{method:'PUT',body:JSON.stringify({speed:v})});
+    },300);
+  });
+}
+initSpeedSlider();

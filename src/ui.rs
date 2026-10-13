@@ -84,6 +84,11 @@ fn panel_html(g: &GeneratorConfig, signals: &[Vec<FlatEntry>]) -> String {
         crate::config::WaveType::Noise => "≈",
         crate::config::WaveType::Random => "?",
         crate::config::WaveType::Constant => "—",
+        crate::config::WaveType::Triangle => "△",
+        crate::config::WaveType::Pulse => "⊔",
+        crate::config::WaveType::Ramp => "╱",
+        crate::config::WaveType::RandomWalk => "⌁",
+        crate::config::WaveType::DoubleSine => "∿∿",
     };
     // Найти последний сигнал генератора
     let (val_str, lat_str) = signal_value(g, signals);
@@ -179,6 +184,23 @@ fn panel_class(g: &GeneratorConfig, signals: &[Vec<FlatEntry>]) -> String {
         .and_then(|e| e.entry_value.as_u64());
     let Some(v) = v else { return String::new() };
     let q = q.unwrap_or(100);
+
+    // === Приоритет: явные пороги тревог (warn/alarm min/max) ===
+    if g.alarm_min.is_some() || g.alarm_max.is_some() || g.warn_min.is_some() || g.warn_max.is_some() {
+        let below_alarm = g.alarm_min.map(|t| v < t).unwrap_or(false);
+        let above_alarm = g.alarm_max.map(|t| v > t).unwrap_or(false);
+        let below_warn = g.warn_min.map(|t| v < t).unwrap_or(false);
+        let above_warn = g.warn_max.map(|t| v > t).unwrap_or(false);
+        if below_alarm || above_alarm {
+            return "alarm".to_string();
+        }
+        if below_warn || above_warn {
+            return "warning".to_string();
+        }
+        return String::new();
+    }
+
+    // === Фолбэк: относительное отклонение от центра (прежняя эвристика) ===
     // Коррелированные сигналы центрируются вокруг master×factor+offset, а не offset —
     // нормализуем по середине диапазона, чтобы панели не алермили постоянно
     let (center, span) = if g.correlation.is_some() {
