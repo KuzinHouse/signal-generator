@@ -996,17 +996,13 @@ async fn run_single_generator(
             // Явный topic генератора имеет приоритет (топики схемы пакета вида
             // USEPI/REFINERY-ORG/.../measurement/<параметр> не выражаются парой prefix+catalog+id).
             let explicit_c = cfg.topic.trim().to_string();
-            let publish = async move {
-                if explicit_c.is_empty() {
-                    mqtt_c.publish_catalog(&catalog_c, &id_c, &sig).await
-                } else {
-                    mqtt_c.publish_catalog_explicit(&catalog_c, &id_c, Some(&explicit_c), &sig).await
-                }
-            };
-            // короткий таймаут: при перегрузке брокера лучше потерять один отсчёт, чем застопорить тик генератора
-            // Неблокирующая публикация: тик генератора не должен ждать брокер,
-            // иначе интервал превращается в «интервал + время публикации».
-            tokio::spawn(async move { let _ = publish.await; });
+            if explicit_c.is_empty() {
+                let _ = mqtt_c.publish_catalog(&catalog_c, &id_c, &sig).await;
+            } else {
+                let _ = mqtt_c
+                    .publish_catalog_explicit(&catalog_c, &id_c, Some(&explicit_c), &sig)
+                    .await;
+            }
         } else {
             log::debug!("Generator {}: packet dropped (simulated)", id);
         }

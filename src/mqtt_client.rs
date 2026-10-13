@@ -212,7 +212,7 @@ impl BrokerHistory {
 /// Обёрнут в Arc, чтобы сервисы могли его клонировать (требование JoinSet).
 pub struct BrokerConnection {
     pub config: BrokerConfig,
-    client: Arc<Mutex<AsyncClient>>,
+    client: Arc<std::sync::RwLock<AsyncClient>>,
     connected: Arc<std::sync::atomic::AtomicBool>,
     broker_status: Arc<Mutex<BrokerStatus>>,
     broker_history: Arc<Mutex<BrokerHistory>>,
@@ -242,7 +242,11 @@ impl BrokerConnection {
         );
 
         let (client, mut eventloop) = AsyncClient::new(mqttopts, 5000);
-        let client = Arc::new(Mutex::new(client));
+        // Подписка на $SYS/# до оборачивания в Arc/RwLock.
+        if let Err(e) = client.subscribe("$SYS/#", QoS::AtMostOnce).await {
+            warn!("Failed to subscribe $SYS/# on {}: {:?}", cfg.host, e);
+        }
+        let client = Arc::new(std::sync::RwLock::new(client));
         let connected = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let connected_clone = connected.clone();
         let broker_status = Arc::new(Mutex::new(BrokerStatus::new()));
@@ -250,13 +254,7 @@ impl BrokerConnection {
         let bs_clone = broker_status.clone();
         let bh_clone = broker_history.clone();
 
-        // Подписка на $SYS/#
-        {
-            let c = client.lock().await;
-            if let Err(e) = c.subscribe("$SYS/#", QoS::AtMostOnce).await {
-                warn!("Failed to subscribe $SYS/# on {}: {:?}", cfg.host, e);
-            }
-        }
+        // Подписка на $SYS/# (отдельный блок ниже удалён — подписка сделана выше)
 
         // Фоновая задача: обработка событий MQTT
         let host = cfg.host.clone();
@@ -307,7 +305,13 @@ impl BrokerConnection {
 
     async fn publish(&self, topic: &str, signal: &[crate::models::FlatEntry]) -> Result<(), String> {
         let payload = serde_json::to_string(signal).map_err(|e| e.to_string())?;
-        let client = self.client.lock().await;
+        // Клонируем дешёвый Arc<AsyncClient> и сразу отпускаем блокировку: на высоких
+        // частотах (750 сигналов × 4 Гц) удержание мьютекса на каждое сообщение
+        // становится узким местом.
+        let client = {
+            let guard = self.client.read().unwrap_or_else(|e| e.into_inner());
+            guard.clone()
+        };
         // QoS 0 + retain. try_publish не ждёт места в очереди: при перегрузке отсчёт
         // пропускается (следующий придёт через тик), а цикл генератора не стопорится.
         client
@@ -329,13 +333,13 @@ impl BrokerConnection {
         }
 
         let (client, mut eventloop) = AsyncClient::new(mqttopts, 5000);
+        if let Err(e) = client.subscribe("$SYS/#", QoS::AtMostOnce).await {
+            warn!("Failed to resubscribe $SYS/#: {:?}", e);
+        }
         // Заменяем клиент
         {
-            let mut c = self.client.lock().await;
-            *c = client;
-            if let Err(e) = c.subscribe("$SYS/#", QoS::AtMostOnce).await {
-                warn!("Failed to resubscribe $SYS/#: {:?}", e);
-            }
+            let mut guard = self.client.write().unwrap_or_else(|e| e.into_inner());
+            *guard = client;
         }
         self.connected
             .store(false, std::sync::atomic::Ordering::SeqCst);
@@ -428,25 +432,19 @@ impl MqttManager {
         if conns.is_empty() {
             return 0;
         }
-        let mut set = tokio::task::JoinSet::new();
         let explicit = explicit_topic.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+        // Публикуем напрямую, без спавна задачи и таймаута на каждое сообщение:
+        // при 750 сигналах × 4 Гц (3000 сообщений/с) спавн + JoinSet на сообщение
+        // съедают больше, чем сама отправка (try_publish не блокирует).
+        let mut published = 0usize;
         for conn in conns.iter() {
             let topic = match &explicit {
                 Some(t) => t.clone(),
                 None => conn.config.topic_for_catalog(catalog, id),
             };
-            let signal_c = signal.to_vec();
-            let conn = conn.clone(); // Arc — 'static + Send
-            set.spawn(async move {
-                tokio::time::timeout(Duration::from_secs(5), conn.publish(&topic, &signal_c)).await
-            });
-        }
-        let mut published = 0usize;
-        while let Some(res) = set.join_next().await {
-            if let Ok(Ok(Ok(_))) = res {
+            if conn.publish(&topic, signal).await.is_ok() {
                 published += 1;
             }
-            // ошибка на одном брокере не роняет остальные
         }
         published
     }

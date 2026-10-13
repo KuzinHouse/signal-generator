@@ -12,12 +12,14 @@ COPY src/ src/
 RUN find src -type f -exec touch {} + && cargo build --release
 
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y ca-certificates curl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y ca-certificates curl openssl && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY --from=builder /app/target/release/signal-generator .
 COPY static/ static/
+COPY deploy/ deploy/
+RUN chmod +x deploy/entrypoint.sh
 
 EXPOSE 8080
 ENV RUST_LOG=info
-CMD ["./signal-generator"]
+ENTRYPOINT ["./deploy/entrypoint.sh"]
