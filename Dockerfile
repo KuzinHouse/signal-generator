@@ -7,7 +7,9 @@ RUN cargo build --release 2>/dev/null || true
 RUN rm -rf src
 
 COPY src/ src/
-RUN cargo build --release
+# touch обязателен: файлы из COPY получают старый mtime, и cargo считает
+# кэш-артефакты (от фиктивного main.rs) свежими -> собирается пустой бинарь.
+RUN find src -type f -exec touch {} + && cargo build --release
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y ca-certificates curl && rm -rf /var/lib/apt/lists/*
