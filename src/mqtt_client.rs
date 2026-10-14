@@ -312,11 +312,12 @@ impl BrokerConnection {
             let guard = self.client.read().unwrap_or_else(|e| e.into_inner());
             guard.clone()
         };
-        // QoS 0, без retain: при 750 сигналах и высокой частоте постоянные обновления
-        // retained-хранилища нагружают брокер (EMQX) и вызывают потери в потоке.
-        // При интервале от 250 мс подписчик всё равно получает значение почти сразу.
+        // QoS 0 + retain. try_publish не ждёт места в очереди: при перегрузке отсчёт
+        // пропускается (следующий придёт через тик), а цикл генератора не стопорится.
+        // retain нужен потребителям (демо сразу видит последнее значение); на потери
+        // в канале он не влияет — проверено сравнением при 750 сигналах.
         client
-            .try_publish(topic, QoS::AtMostOnce, false, payload)
+            .try_publish(topic, QoS::AtMostOnce, true, payload)
             .map_err(|e| format!("MQTT publish skipped (queue full): {}", e))
     }
 
