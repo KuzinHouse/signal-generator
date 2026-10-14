@@ -312,12 +312,11 @@ impl BrokerConnection {
             let guard = self.client.read().unwrap_or_else(|e| e.into_inner());
             guard.clone()
         };
-        // QoS 0 + retain. try_publish не ждёт места в очереди: при перегрузке отсчёт
-        // пропускается (следующий придёт через тик), а цикл генератора не стопорится.
-        // retain нужен потребителям (демо сразу видит последнее значение); на потери
-        // в канале он не влияет — проверено сравнением при 750 сигналах.
+        // QoS 1 (AtLeastOnce): брокер подтверждает приём (PUBACK), поэтому потери
+        // в канале восстанавливаются переотправкой. try_publish не ждёт места в очереди:
+        // при перегрузке отсчёт пропускается со счётчиком "queue full" в логе.
         client
-            .try_publish(topic, QoS::AtMostOnce, true, payload)
+            .try_publish(topic, QoS::AtLeastOnce, true, payload)
             .map_err(|e| format!("MQTT publish skipped (queue full): {}", e))
     }
 
