@@ -860,6 +860,22 @@ async fn run_single_generator(
 
     let state = tokio::sync::Mutex::new(state);
 
+    // Фазовое смещение внутри интервала: без него все 800+ генераторов публикуют
+    // одним всплеском (брокер EMQX при burst отбрасывает часть потока). Смещение
+    // детерминированно считается из id, поэтому картина воспроизводима.
+    {
+        let period = base_interval.as_millis().max(20) as u64;
+        let mut h: u64 = 1469598103934665603;
+        for b in id.as_bytes() {
+            h ^= *b as u64;
+            h = h.wrapping_mul(1099511628211);
+        }
+        let offset = h % period;
+        if offset > 0 {
+            tokio::time::sleep(Duration::from_millis(offset)).await;
+        }
+    }
+
     // Первая публикация немедленно
     let mut first = true;
     loop {
