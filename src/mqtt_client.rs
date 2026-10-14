@@ -208,6 +208,19 @@ impl BrokerHistory {
     }
 }
 
+/// Уникальный MQTT client_id. Брокер трактует два соединения с одинаковым id как
+/// takeover (новое вытесняет старое), поэтому при редеплое/нескольких инстансах
+/// общий id приводил к циклическим разрывам. PID делает id уникальным на процесс.
+fn make_client_id() -> String {
+    format!("signal-generator-{}", std::process::id())
+}
+
+/// Окно неподтверждённых QoS 1 сообщений (PUBACK). Больше окна — поток не встаёт
+/// на ожидании подтверждений при высокой частоте публикации.
+const INFLIGHT: u16 = 500;
+/// Ёмкость канала клиент -> eventloop.
+const CHANNEL_CAPACITY: usize = 20_000;
+
 /// Один подключённый брокер: клиент + его статус + история.
 /// Обёрнут в Arc, чтобы сервисы могли его клонировать (требование JoinSet).
 pub struct BrokerConnection {
@@ -220,8 +233,9 @@ pub struct BrokerConnection {
 
 impl BrokerConnection {
     /// Создать клиент к брокеру и запустить eventloop (подписка $SYS, статус, история)
-    async fn connect(cfg: BrokerConfig, client_id: &str) -> Arc<Self> {
-        let mut mqttopts = MqttOptions::new(client_id, &cfg.host, cfg.port);
+    async fn connect(cfg: BrokerConfig) -> Arc<Self> {
+        let mut mqttopts = MqttOptions::new(&make_client_id(), &cfg.host, cfg.port);
+        mqttopts.set_inflight(INFLIGHT);
         mqttopts.set_keep_alive(Duration::from_secs(120));
         mqttopts.set_clean_session(true);
         if !cfg.username.is_empty() {
@@ -241,7 +255,7 @@ impl BrokerConnection {
             ),
         );
 
-        let (client, mut eventloop) = AsyncClient::new(mqttopts, 5000);
+        let (client, mut eventloop) = AsyncClient::new(mqttopts, CHANNEL_CAPACITY);
         // Подписка на $SYS/# до оборачивания в Arc/RwLock.
         if let Err(e) = client.subscribe("$SYS/#", QoS::AtMostOnce).await {
             warn!("Failed to subscribe $SYS/# on {}: {:?}", cfg.host, e);
@@ -322,7 +336,10 @@ impl BrokerConnection {
 
     async fn reconnect(&self, cfg: &BrokerConfig) {
         let cfg = cfg.clone();
-        let mut mqttopts = MqttOptions::new("signal-generator", &cfg.host, cfg.port);
+        let mut mqttopts = MqttOptions::new(&make_client_id(), &cfg.host, cfg.port);
+        // QoS 1 держит неподтверждённые сообщения в окне inflight: при 750 сигналах
+        // и высокой частоте дефолтного окна не хватает — поток упирается в ожидание PUBACK.
+        mqttopts.set_inflight(INFLIGHT);
         mqttopts.set_keep_alive(Duration::from_secs(120));
         mqttopts.set_clean_session(true);
         if !cfg.username.is_empty() {
@@ -333,7 +350,7 @@ impl BrokerConnection {
             info!("MQTT TLS enabled for {}:{}", cfg.host, cfg.port);
         }
 
-        let (client, mut eventloop) = AsyncClient::new(mqttopts, 5000);
+        let (client, mut eventloop) = AsyncClient::new(mqttopts, CHANNEL_CAPACITY);
         if let Err(e) = client.subscribe("$SYS/#", QoS::AtMostOnce).await {
             warn!("Failed to resubscribe $SYS/#: {:?}", e);
         }
@@ -400,7 +417,7 @@ impl MqttManager {
     pub async fn connect(cfg: &crate::config::MqttConfig) -> Self {
         let mut conns = Vec::new();
         for broker in cfg.brokers.iter().filter(|b| b.enabled) {
-            conns.push(BrokerConnection::connect(broker.clone(), "signal-generator").await);
+            conns.push(BrokerConnection::connect(broker.clone()).await);
         }
         info!("MqttManager: {} broker(s) connected", conns.len());
         Self {
@@ -557,7 +574,7 @@ impl MqttManager {
 
     /// Добавить брокер (создать соединение)
     pub async fn add_broker(&self, cfg: &BrokerConfig) {
-        let conn = BrokerConnection::connect(cfg.clone(), "signal-generator").await;
+        let conn = BrokerConnection::connect(cfg.clone()).await;
         self.connections.lock().await.push(conn);
     }
 
